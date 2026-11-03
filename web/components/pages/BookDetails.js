@@ -122,6 +122,18 @@ export default function BookDetails({ id }) {
                 {genres.map((g) => <span key={g} className="rounded-full border border-line-strong px-3 py-1.5 text-[13px] capitalize">{g.replace(/-/g, " ")}</span>)}
               </div>
             )}
+            {/* what readers say about it (their Goodreads shelves) - each one searches by that tag */}
+            {book.readerTags?.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5" aria-label="Readers' tags">
+                <span className="mr-1 text-xs font-bold uppercase tracking-wider text-muted">Readers say</span>
+                {book.readerTags.slice(0, 8).map((t) => (
+                  <Link key={t} href={`/search?q=${encodeURIComponent(`#${t}`)}`} title={`Books readers tagged #${t}`}
+                    className="rounded-full bg-rust-soft px-2.5 py-1 text-[13px] text-rust-dark no-underline hover:bg-rust hover:text-cream">
+                    #{t}
+                  </Link>
+                ))}
+              </div>
+            )}
             {desc && (
               <p className="m-0 text-[17px] leading-relaxed text-[#3D3029]">
                 {short} {desc.length > 520 && <button type="button" onClick={() => setShowAll(!showAll)} className="cursor-pointer bg-transparent p-0 font-medium text-rust">{showAll ? "Show less" : "Read more"}</button>}

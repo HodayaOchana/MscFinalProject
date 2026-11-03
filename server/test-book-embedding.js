@@ -17,8 +17,12 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 
 async function main() {
   const { rows } = await pool.query(
-    `SELECT id, title, description, embedding::text AS e FROM books
-     WHERE embedding IS NOT NULL AND description IS NOT NULL ORDER BY id LIMIT 3;`
+    // books WITHOUT reader tags: their stored text is "title. description" - the same
+    // text the server builds for an uploaded book (v5 = v1 when there are no tags)
+    `SELECT id, title, description, embedding::text AS e FROM books b
+     WHERE embedding IS NOT NULL AND description IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM book_reader_tags t WHERE t.book_id = b.id)   -- (db/load-reader-tags.js)
+     ORDER BY id LIMIT 3;`
   );
   if (!rows.length) throw new Error("no book with an embedding");
   console.log("Loading the model (first time: download ~420 MB)...");

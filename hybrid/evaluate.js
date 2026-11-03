@@ -100,12 +100,22 @@
  *   node evaluate.js --validation      measure on the validation part (for tuning)
  *   node evaluate.js --validation --emb embedding_v2   CBF with another embedding column
  *   node evaluate.js --validation --als-alpha 5,10,20,40 --als-reg 0.01,0.1,1   tune ALS
+ *   node evaluate.js --validation --mix 0.7 --ease     + EASE and HyEASE (EASE + ALS, CF/ease.js)
+ *   node evaluate.js --ratings-file data/goodbooks/ratings.csv
+ *                     ALL goodbooks ratings (53K readers) from the file, instead of the
+ *                     database sample (20K readers) - same method, same seed. The test
+ *                     users then come from the bigger group, so compare runs with the
+ *                     same option. Cached as data/cache/ratings-file.bin.
+ *   ... --ratings-file data/goodbooks/ratings.csv --same-test-users
+ *                     the SAME test users with the SAME hidden books as a run on the sample;
+ *                     only the other readers are added -> measures "more training readers".
  */
 
 const fs = require("fs");
 const path = require("path");
 // The questionnaire's genre list (onboarding/genres.js, next to this folder)
 const { GENRES } = require(path.join(__dirname, "..", "onboarding", "genres"));
+const { trainEASE, easeScores } = require(path.join(__dirname, "..", "CF", "ease"));
 const { Pool } = require("pg");
 require("dotenv").config();
 
@@ -160,6 +170,12 @@ const ALS_REPEATS = Math.max(1, arg("--als-repeats", 1));
 // Off unless --mix is given.
 const MIX = process.argv.includes("--mix") ? listArg("--mix", "1") : [];
 const MIX_BETA = listArg("--mix-beta", String(FINAL_BETA));
+// EASE (CF/ease.js): --ease  adds "EASE" (alone) and "HyEASE-<als>-x<y>" = the HyMix rules
+// with CF = y * EASE + (1 - y) * ALS  (--ease-mix 0.85,1  --ease-lambda 500  --ease-top 100)
+const EASE_ON = process.argv.includes("--ease");
+const EASE_MIX = listArg("--ease-mix", "0.85,1");
+const EASE_LAMBDA = arg("--ease-lambda", 500);
+const EASE_TOP = arg("--ease-top", 100);
 const NEW_MIN = arg("--new-min", 5);              // HyALS-...-new5: a book with fewer ratings = "new" (CBF only), as in the proposal
 const POP_PER_AUTHOR = arg("--pop-author", 2);   // Hybrid-v3: books per author among POPULARITY picks
 const MAX_PER_AUTHOR = arg("--max-author", 99);  // Hybrid-v2: books per author (99 = no limit; 2 cost 1.5 points)
@@ -176,6 +192,7 @@ const PAGE = 200000;
 const CACHE_DIR = path.join(".", "data", "cache");
 const NO_CACHE = process.argv.includes("--no-cache");
 const REFRESH = process.argv.includes("--refresh");
+const RATINGS_FILE = (() => { const i = process.argv.indexOf("--ratings-file"); return i > -1 ? process.argv[i + 1] : null; })();
 
 // ---------- local cache (data/cache) ----------
 function cacheRead(name) {
@@ -193,7 +210,8 @@ function cacheWrite(name, buffer) {
 }
 const RESULTS_PATH =
   (COLD_ITEMS ? `./data/eval-results-newbooks` : COLD ? `./data/eval-results-cold${COLD}` : "./data/eval-results") +
-  (VALIDATION ? "-val" : "") + (EMB_COLUMN !== "embedding" ? `-${EMB_COLUMN}` : "") + ".csv";
+  (VALIDATION ? "-val" : "") + (EMB_COLUMN !== "embedding" ? `-${EMB_COLUMN}` : "") +
+  (process.argv.includes("--ratings-file") ? (process.argv.includes("--same-test-users") ? "-full-same" : "-full") : "") + ".csv";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -224,7 +242,56 @@ function shuffle(arr) {
 
 // ---------- data ----------
 
+// --ratings-file: every goodbooks rating from the CSV; goodbooks book_id -> books.id
+// (books not in our table are skipped, exactly as load-ratings.js did for the sample)
+async function loadRatingsFile() {
+  const cached = cacheRead("ratings-file.bin");
+  const fromBin = (buf) => {
+    const a = new Int32Array(buf.buffer, buf.byteOffset, buf.length / 4);
+    const out = new Array(a.length / 3);
+    for (let i = 0, j = 0; i < a.length; i += 3, j++) out[j] = [a[i], a[i + 1], a[i + 2]];
+    return out;
+  };
+  if (cached) { const out = fromBin(cached); console.log(`  ${out.length.toLocaleString()} ratings (all goodbooks readers)`); return out; }
+  const { rows: map } = await pool.query(`SELECT id, goodbooks_id FROM books WHERE goodbooks_id IS NOT NULL;`);
+  const ourId = new Map(map.map((r) => [Number(r.goodbooks_id), r.id]));
+  const lines = fs.readFileSync(RATINGS_FILE, "utf8").split(/\r?\n/);
+  const head = lines[0].replace(/^\uFEFF/, "").split(",");
+  const [cu, cb, cr] = ["user_id", "book_id", "rating"].map((c) => head.indexOf(c));
+  if (cu < 0 || cb < 0 || cr < 0) throw new Error(`Unexpected header in ${RATINGS_FILE}: ${lines[0]}`);
+  const rows = [];
+  let skipped = 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const p = lines[i].split(",");
+    const b = ourId.get(Number(p[cb]));
+    if (b) rows.push([Number(p[cu]), b, Number(p[cr])]); else skipped++;
+  }
+  // the same order as the database read (user, book) - so with --same-test-users every
+  // test user gets exactly the same hidden books as in a run on the sample
+  rows.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  console.log(`  ${rows.length.toLocaleString()} ratings from ${RATINGS_FILE} (${skipped.toLocaleString()} of books not in our table skipped)`);
+  const a = new Int32Array(rows.length * 3);
+  rows.forEach((r, i) => { a[i * 3] = r[0]; a[i * 3 + 1] = r[1]; a[i * 3 + 2] = r[2]; });
+  cacheWrite("ratings-file.bin", Buffer.from(a.buffer));
+  return rows;
+}
+
+let SAMPLE_USERS = null; // --same-test-users: the readers of the database sample
+
 async function loadRatings() {
+  if (RATINGS_FILE) {
+    if (process.argv.includes("--same-test-users")) {
+      const sample = await loadSampleRatings();
+      SAMPLE_USERS = new Set(sample.map((r) => r[0]));
+      console.log(`  test users only from the database sample (${SAMPLE_USERS.size.toLocaleString()} readers)`);
+    }
+    return loadRatingsFile();
+  }
+  return loadSampleRatings();
+}
+
+async function loadSampleRatings() {
   // ratings.bin = Int32 triples: user_id, book_id, rating
   const cached = cacheRead("ratings.bin");
   if (cached) {
@@ -334,7 +401,10 @@ function split(ratings) {
     if (!byUser.has(u)) byUser.set(u, []);
     byUser.get(u).push([b, r]);
   }
-  const eligible = [...byUser.keys()].filter((u) => byUser.get(u).length >= MIN_USER_RATINGS);
+  let eligible = [...byUser.keys()].filter((u) => byUser.get(u).length >= MIN_USER_RATINGS);
+  // --same-test-users (with --ratings-file): test users only from the database sample, so the
+  // SAME users with the SAME hidden books are measured - only the other readers are added.
+  if (SAMPLE_USERS) eligible = eligible.filter((u) => SAMPLE_USERS.has(u));
 
   // --cold-items F: a fraction F of the books become "new books" for TEST and
   // another F for VALIDATION: ALL their ratings are removed from training. A
@@ -752,6 +822,20 @@ async function main() {
     }
   }
 
+  // EASE: trained on the train ratings only (like every model here)
+  let easeModel = null;
+  if (EASE_ON) {
+    const t1 = Date.now();
+    console.log(`Training EASE (lambda ${EASE_LAMBDA}, top ${EASE_TOP} per book) - the big inverse takes a few minutes...`);
+    const lists = Array.from({ length: nU }, () => []);
+    for (let k = 0; k < uIdx.length; k++) lists[uIdx[k]].push(bIdx[k]);
+    easeModel = await trainEASE(lists.map((l) => Int32Array.from(l)), nB, {
+      lambda: EASE_LAMBDA, top: EASE_TOP,
+      onProgress: (p, n) => console.log(`    inverse ${p} / ${n} books (${Math.round((Date.now() - t1) / 1000)}s)`),
+    });
+    console.log(`    done in ${Math.round((Date.now() - t1) / 1000)}s`);
+  }
+
   const embCentered = centerEmbeddings(emb, has, dim, nB);
   console.log("Finding content neighbours for CBF-kNN...");
   const cbfNeighbors = contentNeighbors(embCentered, has, dim, nB, CBF_TOP_K);
@@ -770,7 +854,8 @@ async function main() {
   const models = ["Random", "Popularity", "CBF-mean", "CBF-centered", "CBF-kNN", "CF",
     ...alsModels.map((m) => m.name), "Proposal-rule", ...hybridNames,
     ...alsModels.flatMap((m) => [m.hyName, `${m.hyName}-new${NEW_MIN}`]),
-    ...alsModels.flatMap((m) => mixNames(m))];
+    ...alsModels.flatMap((m) => mixNames(m)),
+    ...(EASE_ON ? ["EASE", ...alsModels.flatMap((m) => EASE_MIX.map((x) => `HyEASE-${m.name.replace(/^ALS-/, "")}-x${x}`))] : [])];
   function mixNames(m) {
     const tag = m.name.replace(/^ALS-/, "");
     return MIX.flatMap((x) => MIX_BETA.map((b) => `HyMix-${tag}-x${x}-b${b}`));
@@ -862,6 +947,17 @@ async function main() {
     };
     const cfN = normalize(cfScore);
     const cbfN = normalize(kScore);
+    // EASE: sum of the weights of the user's books
+    let easeN = null;
+    if (easeModel) {
+      const es = easeScores(easeModel, mine.map(([b]) => b), nB);
+      recs["EASE"] = topK(es, exclude, K);
+      // divide by the best score, but KEEP negative scores ("readers of your books rarely want
+      // this one") - unlike normalize(), which sets them to 0
+      let mx = 0;
+      for (let b = 0; b < nB; b++) if (!exclude.has(b) && es[b] > mx) mx = es[b];
+      easeN = Float64Array.from(es, (v) => (mx > 0 ? v / mx : 0));
+    }
     const hybrid = (alpha) => {
       const h = new Float64Array(nB);
       for (let b = 0; b < nB; b++) {
@@ -1053,6 +1149,28 @@ async function main() {
           mainM.push(b);
         }
         recs[`HyMix-${tag}-x${x}-b${beta}`] = [...mainM, ...newV2];
+      }
+
+      // HyEASE: the same rules, CF = y * EASE + (1 - y) * ALS  (y = 1: EASE alone as the CF part)
+      if (easeN) for (const y of EASE_MIX) {
+        const wb = mine.length / (mine.length + FINAL_BETA);
+        const cfE = Float64Array.from(alsN, (a, b) => y * easeN[b] + (1 - y) * a);
+        const ratedE = new Float64Array(nB).fill(-Infinity);
+        for (let b = 0; b < nB; b++) if (ratingCount[b] > 0) ratedE[b] = wb * cfE[b] + (1 - wb) * popGenre(b);
+        const orderE = [];
+        for (let b = 0; b < nB; b++) if (!exclude.has(b) && ratedE[b] > -Infinity && !newV2.includes(b)) orderE.push(b);
+        orderE.sort((a, b) => ratedE[b] - ratedE[a]);
+        const authorsE = new Map();
+        const mainE = [];
+        for (const b of orderE) {
+          if (mainE.length >= K - newV2.length) break;
+          const a = authorOf[b];
+          const popDriven = (1 - wb) * popGenre(b) > wb * cfE[b];
+          if (popDriven && a !== undefined && (authorsE.get(a) || 0) >= POP_PER_AUTHOR) continue;
+          if (a !== undefined) authorsE.set(a, (authorsE.get(a) || 0) + 1);
+          mainE.push(b);
+        }
+        recs[`HyEASE-${tag}-x${y}`] = [...mainE, ...newV2];
       }
     }
 

@@ -29,6 +29,12 @@
  *        Only ONE thing changes from v1 - the cleaning - so the comparison
  *        tells whether the cleaning helps.
  *        RESULT (100 books, 22/10/2026): no difference (26.5% vs 27.3%) - v1 kept.
+ *   v5 - title + READER TAGS + description. Reader tags = the shelves Goodreads
+ *        readers put the book on ("dystopian", "vampires", "coming of age"),
+ *        cleaned (CBF/reader-tags.js) and saved by db/load-reader-tags.js into
+ *        book_reader_tags (up to 10 per book). More specific than genres (v3).
+ *        Only goodbooks books have them; other books get v1 text.
+ *        Tags come BEFORE the description so they are never cut off.
  *
  * Another MODEL (--model): the text stays v1, only the model changes.
  *   minilm  Xenova/all-MiniLM-L6-v2   384 numbers, reads ~256 tokens   (the app until 22/10/2026)
@@ -49,6 +55,8 @@
  *   node CBF/embed-books.js --column embedding_v3 --text v3   test version with 10K genres
  *   node CBF/embed-books.js --column embedding_v4 --text v4   test version with cleaned descriptions
  *   node CBF/embed-books.js --column embedding_mpnet --model mpnet   test a bigger model (text v1)
+ *   node CBF/embed-books.js --column embedding_v5 --text v5   test version with reader tags
+ *                                       (first: node db/load-reader-tags.js --apply)
  *   node CBF/embed-books.js --column embedding_v2 --text v2 --preview 5
  *                                       only print the text of 5 books, nothing saved
  */
@@ -59,7 +67,7 @@ require("dotenv").config();
 const { cleanDescription } = require(path.join(__dirname, "clean-description"));
 
 const BATCH_SIZE = 50;
-const DEFAULT_TEXT = "v1"; // after switching to v2, change this to "v2" so new books match
+const DEFAULT_TEXT = "v5"; // v5 since 03/11/2026 (db/switch-to-tags.js): new books get the same text as the rest
 
 function strArg(name, def) {
   const i = process.argv.indexOf(name);
@@ -83,8 +91,8 @@ if (!/^[a-z_][a-z0-9_]*$/.test(COLUMN)) {
   console.error(`Bad column name: ${COLUMN}`);
   process.exit(1);
 }
-if (!["v1", "v2", "v3", "v4"].includes(TEXT_VERSION)) {
-  console.error(`--text must be v1, v2, v3 or v4`);
+if (!["v1", "v2", "v3", "v4", "v5"].includes(TEXT_VERSION)) {
+  console.error(`--text must be v1, v2, v3, v4 or v5`);
   process.exit(1);
 }
 
@@ -106,9 +114,13 @@ async function ensureVectorSetup() {
   }
 }
 
+// v5: the book's reader tags, best first (book_reader_tags, db/load-reader-tags.js)
+const TAGS_SQL = `(SELECT array_agg(t.tag ORDER BY t.count DESC) FROM book_reader_tags t WHERE t.book_id = books.id) AS reader_tags`;
+const extraCols = () => (TEXT_VERSION === "v5" ? `, ${TAGS_SQL}` : "");
+
 async function getBooksNeedingEmbedding(limit) {
   const result = await pool.query(
-    `SELECT id, title, description, categories, goodreads_genres
+    `SELECT id, title, description, categories, goodreads_genres${extraCols()}
      FROM books
      WHERE ${COLUMN} IS NULL
      ORDER BY id
@@ -144,6 +156,12 @@ function buildText(book) {
   }
   const desc = book.description ? book.description.slice(0, 1000) : "";
   if (TEXT_VERSION === "v1") return desc ? book.title + ". " + desc : book.title;
+  if (TEXT_VERSION === "v5") {
+    const tags = book.reader_tags || [];
+    let text = book.title + ".";
+    if (tags.length) text += " Readers' tags: " + tags.join(", ") + ".";
+    return desc ? text + " " + desc : text;
+  }
 
   const genres = genresOf(book);
   let text = book.title + ".";
@@ -176,10 +194,10 @@ async function main() {
   if (PREVIEW) {
     // Show the exact text that would be embedded - nothing is saved
     const { rows } = await pool.query(
-      `(SELECT id, title, description, categories, goodreads_genres FROM books
+      `(SELECT id, title, description, categories, goodreads_genres${extraCols()} FROM books
         WHERE goodbooks_id IS NOT NULL ORDER BY id LIMIT $1)
        UNION ALL
-       (SELECT id, title, description, categories, goodreads_genres FROM books
+       (SELECT id, title, description, categories, goodreads_genres${extraCols()} FROM books
         WHERE goodbooks_id IS NULL ORDER BY id LIMIT $1);`,
       [PREVIEW]
     );

@@ -46,6 +46,7 @@ const { authorPage, knownPenName, profilesTable, cleanWebsite } = require("./aut
 const { CONSENT_VERSIONS, REQUIRED, SOURCES, BODY_KEYS, currentConsents, consentNeeded } = require("./consents");
 const path = require("path");
 const { getOnboardingBooks } = require(path.join(__dirname, "..", "onboarding", "onboarding"));
+const { SIGNALS, searchSignals } = require(path.join(__dirname, "..", "CF", "signal-weights")); // what each action counts
 const { GENRES } = require(path.join(__dirname, "..", "onboarding", "genres"));
 const GENRE_LABEL = new Map(GENRES.map((g) => [g.key, g.label]));
 
@@ -104,10 +105,35 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
       ),
     ]);
     exclude = [...exclude, ...dismissed.map((d) => d.book_id)];
+    // the user's other signals for the ALS user vector (weights: CF/signal-weights.js):
+    // finished (no rating), on the TBR now, and searches (opened a result = strong,
+    // no click = a little for the top results, more when the same search is repeated)
+    const { rows: interest } = await db.query(
+      `SELECT book_id,
+              CASE WHEN bool_or(type = 'finished') THEN $2::float8 ELSE $3::float8 END AS value
+       FROM user_events WHERE user_id = $1
+       GROUP BY book_id
+       HAVING NOT bool_or(type = 'dismissed')     -- "Not for me" is never a positive signal
+          AND (bool_or(type = 'finished')
+               OR (array_agg(type ORDER BY created_at DESC) FILTER (WHERE type IN ('saved', 'unsaved')))[1] = 'saved');`,
+      [userId, SIGNALS.finished, SIGNALS.tbr]
+    );
+    const signal = new Map(interest.map((r) => [r.book_id, Number(r.value)]));
+    const { rows: searches } = await db.query(
+      `SELECT clicked_book_id, search_count, result_book_ids FROM user_searches WHERE user_id = $1;`, [userId]
+    ).catch(() => ({ rows: [] })); // no search table yet (db/create-search-table.js)
+    const { rows: nfm } = await db.query(`SELECT DISTINCT book_id FROM user_events WHERE user_id = $1 AND type = 'dismissed';`, [userId]);
+    const notForMe = new Set(nfm.map((r) => r.book_id));
+    for (const row of searches) {
+      for (const sig of searchSignals(row)) {
+        if (!notForMe.has(sig.bookId) && !(signal.get(sig.bookId) >= sig.value)) signal.set(sig.bookId, sig.value);
+      }
+    }
     const result = await hybrid.getHybridRecommendations(
       ratings.map((r) => ({ bookId: r.book_id, rating: r.rating })),
       count,
-      { genres: genres.map((g) => g.genre_key), nearby, diversify: true, exclude, ...extra }
+      { genres: genres.map((g) => g.genre_key), nearby, diversify: true, exclude,
+        signals: [...signal].map(([bookId, value]) => ({ bookId, value })), ...extra }
     );
     return { ...result, recommendations: result.recommendations.map(withTexts) };
   }

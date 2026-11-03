@@ -4,7 +4,7 @@
  * text (upper/lower case and extra spaces ignored), with search_count.
  *
  *   GET    /api/me/searches                 { searches: [{ query, at, count }] }  - the last 8, newest first
- *   POST   /api/me/searches                 { query, resultsCount } -> { id, count }  (count + 1 if searched before;
+ *   POST   /api/me/searches                 { query, resultsCount, topBookIds } -> { id, count }  (count + 1 if searched before;
  *                                         a search with 0 results is NOT saved)
  *   POST   /api/me/searches/:id/click       { bookId }  - the result opened from that search
  *   DELETE /api/me/searches?query=harry      remove one search from the list
@@ -48,21 +48,24 @@ module.exports = function searchHistoryRoutes(router, { db, h }) {
     const query = String(req.body.query || "").replace(/\s+/g, " ").trim();
     if (query.length < 2 || query.length > 200) throw new BadRequest("query must be 2-200 characters");
     const results = Math.max(0, Math.min(Number(req.body.resultsCount) || 0, 10000));
+    // the top 3 results shown (ids) - a search without a click still counts a little
+    const top = (Array.isArray(req.body.topBookIds) ? req.body.topBookIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 3);
     // a search that found nothing tells us nothing about the reader - not saved
     if (results === 0) return res.json({ id: null, skipped: "no results" });
     try {
       // new text -> a new row; the same text again -> count + 1 (not within 30 s)
       const { rows } = await db.query(
-        `INSERT INTO user_searches (user_id, query, query_norm, results_count)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO user_searches (user_id, query, query_norm, results_count, result_book_ids)
+         VALUES ($1, $2, $3, $4, $6::int[])
          ON CONFLICT (user_id, query_norm) DO UPDATE SET
            query = EXCLUDED.query,
            results_count = EXCLUDED.results_count,
+           result_book_ids = EXCLUDED.result_book_ids,
            search_count = user_searches.search_count
              + CASE WHEN user_searches.last_searched_at > now() - make_interval(secs => $5) THEN 0 ELSE 1 END,
            last_searched_at = now()
          RETURNING id, search_count;`,
-        [req.user.id, query, norm(query), results, REPEAT_SEC]
+        [req.user.id, query, norm(query), results, REPEAT_SEC, top]
       );
       await db.query(
         `DELETE FROM user_searches WHERE user_id = $1 AND id NOT IN

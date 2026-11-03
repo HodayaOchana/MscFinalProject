@@ -5,7 +5,9 @@
  *   regular users  - Precision@10 20.95%  (item-item CF 18.31%, previous hybrid 18.48%)
  *   new users (5)  - Precision@10  7.94%  (item-item CF 5.86%, proposal rule 3.13%)
  *
- * CF = ALS + item-item together (ALS_WEIGHT, below; since 25/10/2026).
+ * CF = ALS + item-item together (ALS_WEIGHT, below; since 25/10/2026);
+ *      since 03/11/2026: EASE + ALS (EASE_WEIGHT) once CF/retrain.js has published
+ *      the EASE table - test set 29.50% -> 35.22% (the proposal's target).
  * ALS (matrix factorization, as in the proposal): the book vectors come
  * from CF/train-als.js (table als_item_factors); the user's vector is computed
  * here, from his ratings, with one small solve (foldInUser). If the ALS tables
@@ -91,11 +93,23 @@ const NEARBY_POOL = 100;
 //   ALS only (1.0) 20.10%  ->  0.7: 21.75%  (+1.65, ranges did not overlap)
 // Set to 1 to go back to ALS only.
 const ALS_WEIGHT = 0.7;        // with `nearby`: candidates ranked before filtering by library availability
+// CF = EASE_WEIGHT * EASE + (1 - EASE_WEIGHT) * ALS  when the EASE table exists (since 03/11/2026;
+// item-item is then not used). Measured (hybrid/evaluate.js --mix 0.7 --ease, all 53K goodbooks
+// readers, the same 500 test users): VALIDATION HyMix 21.70% -> HyEASE 24.12%;
+// TEST (run once) 29.50% -> 35.22% - the proposal's target of 35%.
+// Without the table (CF/retrain.js not run yet) the old ALS + item-item mix is used.
+const EASE_WEIGHT = 0.85;
 
-// The ALS model (settings + Y^T Y) - read once; null if CF/train-als.js was not run
+// The ALS model (settings + Y^T Y) - read once, and again every 10 minutes, so a
+// model published by CF/retrain.js is picked up without restarting the server
+// (the book vectors are read per request anyway). null if no model was trained.
+const ALS_RELOAD_MS = 10 * 60 * 1000;
 let alsPromise = null;
+let alsLoadedAt = 0;
 function getAlsModel() {
+  if (alsPromise && Date.now() - alsLoadedAt > ALS_RELOAD_MS) alsPromise = null;
   if (!alsPromise) {
+    alsLoadedAt = Date.now();
     alsPromise = pool
       .query(`SELECT factors, alpha, reg, yty FROM als_model WHERE id = 1;`)
       .then((r) => (r.rows[0] ? { ...r.rows[0], yty: Float64Array.from(r.rows[0].yty) } : null))
@@ -109,6 +123,29 @@ function getAlsModel() {
       });
   }
   return alsPromise;
+}
+
+// Is the EASE model published? (table ease_similarity, CF/retrain.js) - checked every 10 minutes
+let easeCheck = { at: 0, value: null };
+async function hasEase() {
+  if (Date.now() - easeCheck.at < ALS_RELOAD_MS && easeCheck.value !== null) return easeCheck.value;
+  const { rows } = await pool.query(`SELECT to_regclass('ease_similarity') IS NOT NULL AS t;`);
+  easeCheck = { at: Date.now(), value: rows[0].t };
+  return easeCheck.value;
+}
+
+/** EASE candidates: score(j) = sum over the user's books i of B[i][j] (negative weights count too) */
+async function easeCandidates(bookIds) {
+  const { rows } = await pool.query(
+    `SELECT s.neighbor_id AS id, sum(s.weight)::float8 AS score
+     FROM ease_similarity s
+     WHERE s.book_id = ANY($1::int[]) AND s.neighbor_id <> ALL($1::int[])
+     GROUP BY s.neighbor_id
+     ORDER BY score DESC
+     LIMIT $2;`,
+    [bookIds, CANDIDATES]
+  );
+  return rows;
 }
 
 /** ALS candidates: score(i) = x_u . y_i, x_u computed from the user's ratings */
@@ -190,6 +227,12 @@ async function getHybridRecommendations(ratings, count = 10, options = {}) {
   const stars = ratings.map((r) => Number(r.rating));
   const n = ratings.length;
   const excluded = new Set((options.exclude || []).map(Number).filter(Number.isInteger));
+  // options.signals: [{ bookId, value }] - books the user did not rate but showed interest in
+  // (TBR, finished). Used ONLY for the ALS user vector, never as ratings elsewhere.
+  const ratedSet = new Set(bookIds);
+  const signals = (options.signals || []).filter((x) => !ratedSet.has(Number(x.bookId)) && x.value > 0);
+  const signalIds = signals.map((x) => Number(x.bookId));
+  const signalValues = signals.map((x) => Number(x.value));
 
   // The user's genres: from the questionnaire, or inferred from his books
   const genres = options.genres?.length ? [...new Set(options.genres)] : await inferGenres(bookIds, stars);
@@ -246,11 +289,17 @@ async function getHybridRecommendations(ratings, count = 10, options = {}) {
         }
         throw err;
       })).rows;
-  const [alsRows, itemRows] = !n
-    ? [[], []]
+  // EASE published? Then CF = EASE + ALS and item-item is not needed
+  // options.cf = "legacy": the model before EASE (ALS + item-item) - for comparisons (hybrid/compare-cf.js)
+  const useEase = n > 0 && options.cf !== "legacy" && (await hasEase());
+  const [alsRows, itemRows, easeRows] = !n
+    ? [[], [], []]
     : await Promise.all([
-        alsWeight > 0 ? alsCandidates(alsModel, bookIds, stars) : [],
-        alsWeight < 1 ? itemItem() : [],
+        // the ALS user vector also uses the user's other signals (TBR, finished without a rating):
+        // weaker than a rating, like goodbooks "want to read" in training (CF/retrain.js)
+        alsWeight > 0 ? alsCandidates(alsModel, [...bookIds, ...signalIds], [...stars, ...signalValues]) : [],
+        !useEase && alsWeight < 1 ? itemItem() : [],
+        useEase ? easeCandidates(bookIds) : [],
       ]);
   const scale = (rows) => {
     const max = Math.max(0, ...rows.map((r) => Number(r.score)));
@@ -258,12 +307,23 @@ async function getHybridRecommendations(ratings, count = 10, options = {}) {
   };
   const alsS = scale(alsRows);
   const itemS = scale(itemRows);
-  // if one kind found nothing (e.g. no item_similarity table), the other gets the full weight
-  const wA = !itemRows.length ? 1 : !alsRows.length ? 0 : alsWeight;
-  const cf = [...new Set([...alsS.keys(), ...itemS.keys()])].map((id) => ({
-    id,
-    score: wA * (alsS.get(id) || 0) + (1 - wA) * (itemS.get(id) || 0),
-  }));
+  let cf;
+  if (useEase) {
+    // CF = EASE_WEIGHT * EASE + (1 - EASE_WEIGHT) * ALS, each scaled 0..1
+    const easeS = scale(easeRows);
+    const wE = !alsRows.length ? 1 : !easeRows.length ? 0 : EASE_WEIGHT;
+    cf = [...new Set([...easeS.keys(), ...alsS.keys()])].map((id) => ({
+      id,
+      score: wE * (easeS.get(id) || 0) + (1 - wE) * (alsS.get(id) || 0),
+    }));
+  } else {
+    // if one kind found nothing (e.g. no item_similarity table), the other gets the full weight
+    const wA = !itemRows.length ? 1 : !alsRows.length ? 0 : alsWeight;
+    cf = [...new Set([...alsS.keys(), ...itemS.keys()])].map((id) => ({
+      id,
+      score: wA * (alsS.get(id) || 0) + (1 - wA) * (itemS.get(id) || 0),
+    }));
+  }
 
   // 1b. Popularity inside the user's genres (+ the global most liked, as a fallback)
   const { rows: popular } = await pool.query(
@@ -430,7 +490,9 @@ async function getHybridRecommendations(ratings, count = 10, options = {}) {
   const byId = new Map(details.map((d) => [d.id, d]));
   return {
     cfWeight: w,
-    cfModel: !n ? "none - no ratings" : !alsModel ? "item-item" : alsWeight >= 1 ? "ALS" : `ALS ${alsWeight} + item-item ${+(1 - alsWeight).toFixed(2)}`,
+    cfModel: !n ? "none - no ratings"
+      : useEase ? (alsRows.length ? `EASE ${EASE_WEIGHT} + ALS ${+(1 - EASE_WEIGHT).toFixed(2)}` : "EASE")
+      : !alsModel ? "item-item" : alsWeight >= 1 ? "ALS" : `ALS ${alsWeight} + item-item ${+(1 - alsWeight).toFixed(2)}`,
     genres,
     ...(nearby ? { nearby } : {}),
     recommendations: final.map((p) => ({ ...byId.get(p.id), ...p })),

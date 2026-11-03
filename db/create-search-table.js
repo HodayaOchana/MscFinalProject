@@ -11,6 +11,8 @@
  *   search_count     how many times it was searched (again within 30 s = not counted, a double click)
  *   results_count    how many results the last search found
  *   clicked_book_id  the result opened the last time
+ *   result_book_ids  the top 3 results shown the last time (a search with no click still
+ *                    says a little about taste - CF/signal-weights.js)
  *   created_at       first time searched;  last_searched_at  last time
  *
  * Used now for "Recent searches" under the search box. Kept for the recommender
@@ -40,12 +42,14 @@ CREATE TABLE IF NOT EXISTS user_searches (
   search_count      int  NOT NULL DEFAULT 1,
   results_count     int  NOT NULL DEFAULT 0,
   clicked_book_id   int  REFERENCES books(id) ON DELETE SET NULL,
+  result_book_ids   int[],                     -- the top 3 results shown the last time
   created_at        timestamptz NOT NULL DEFAULT now(),
   last_searched_at  timestamptz NOT NULL DEFAULT now()
 );
 -- from the first version (one row per search): add the new columns
 ALTER TABLE user_searches ADD COLUMN IF NOT EXISTS search_count int NOT NULL DEFAULT 1;
 ALTER TABLE user_searches ADD COLUMN IF NOT EXISTS last_searched_at timestamptz;
+ALTER TABLE user_searches ADD COLUMN IF NOT EXISTS result_book_ids int[];
 `;
 
 // one row per (user, text): keep the newest row, sum the counts, earliest first / latest last time

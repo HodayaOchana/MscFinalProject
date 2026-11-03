@@ -8,7 +8,8 @@
  *   GET  /api/onboarding/questionnaire    the questionnaire: screens, texts, genres
  *   POST /api/onboarding/books            { genres } -> ~20 books to rate
  *   POST /api/recommendations             { answers | ratings, genres, count } -> 10 books
- *   GET  /api/books/search?q=harry        search books by title (for search boxes)
+ *   GET  /api/books/search?q=harry        search books by title or author; q=#dystopian - by reader tag
+ *   GET  /api/books/tags?q=dys            reader-tag suggestions for "#..." in the search box
  *   GET  /api/books/:id                   one book's details
  *   GET  /api/books/:id/similar           "similar books" for a book page (CBF), ?count=6&offset=0 (up to 30)
  *   GET  /api/series?name=Harry%20Potter  all books of a series, in order (+ box sets)
@@ -155,18 +156,60 @@ async function recommend(req, res) {
 app.post("/api/recommendations", wrap(recommend));
 app.post("/api/onboarding/submit", wrap(recommend)); // the name used in questionnaire.js
 
+// Search: by TITLE or AUTHOR ("rowling", "j k rowling" and "J.K. Rowling" all match),
+// or by a READER TAG with # ("#dystopian", "#coming of age") - book_reader_tags,
+// the shelves Goodreads readers put the books on (db/load-reader-tags.js).
+const normName = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const tagOf = (q) => String(q || "").replace(/^#+/, "").toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+
 app.get("/api/books/search", wrap(async (req, res) => {
   const q = String(req.query.q || "").trim();
+  if (q.startsWith("#")) {
+    const tag = tagOf(q);
+    if (tag.length < 2) throw new BadRequest("type at least 2 letters after #");
+    // the exact tag first; if no book has it, tags that START with it ("#dysto" -> dystopian)
+    const query = (cond) => db.query(
+      `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.goodbooks_id, t.tag, t.count AS tag_count
+       FROM book_reader_tags t JOIN books b ON b.id = t.book_id
+       WHERE ${cond}
+       ORDER BY t.count DESC
+       LIMIT 30;`, [tag]);
+    let { rows } = await query(`t.tag = $1`).catch((err) => { if (err.code === "42P01") return { rows: [] }; throw err; });
+    if (!rows.length) ({ rows } = await query(`t.tag LIKE $1 || '%'`).catch(() => ({ rows: [] })));
+    // a book found under two similar tags appears once
+    const seen = new Set();
+    rows = rows.filter((r) => !seen.has(r.id) && seen.add(r.id));
+    return res.json({ mode: "tag", tag: rows[0]?.tag || tag, books: await addPeek(db, rows.map((r) => ({ ...r, match: "tag" }))) });
+  }
   if (q.length < 2) throw new BadRequest("search needs at least 2 letters");
   const { rows } = await db.query(
-    `SELECT id, title, authors, thumbnail_url, goodbooks_id
-     FROM books
-     WHERE title ILIKE '%' || $1 || '%'
-     ORDER BY (lower(title) = lower($1)) DESC, goodbooks_id NULLS LAST, length(title)
-     LIMIT 20;`,
-    [q]
+    `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.goodbooks_id,
+            CASE WHEN b.title ILIKE '%' || $1 || '%' THEN 'title' ELSE 'author' END AS match
+     FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id
+     WHERE b.title ILIKE '%' || $1 || '%'
+        OR (length($2) >= 3 AND EXISTS (SELECT 1 FROM unnest(b.authors) a
+                                        WHERE regexp_replace(lower(a), '[^a-z0-9]+', '', 'g') LIKE '%' || $2 || '%'))
+     ORDER BY (lower(b.title) = lower($1)) DESC,
+              (b.title ILIKE '%' || $1 || '%') DESC,       -- title matches first, then the author's books
+              coalesce(p.ratings_count, 0) DESC,           -- the better-known books first
+              length(b.title)
+     LIMIT 30;`,
+    [q, normName(q)]
   );
-  res.json({ books: await addPeek(db, rows) });
+  res.json({ mode: "text", books: await addPeek(db, rows) });
+}));
+
+// Tag suggestions while typing "#...": the tags that start with it, most used first
+//   GET /api/books/tags?q=dys   ->  { tags: [{ tag: "dystopian", books: 412 }, ...] }   (q empty: the most common)
+app.get("/api/books/tags", wrap(async (req, res) => {
+  const t = tagOf(req.query.q);
+  const { rows } = await db.query(
+    `SELECT tag, count(*)::int AS books FROM book_reader_tags
+     WHERE ($1 = '' OR tag LIKE $1 || '%' OR tag LIKE '% ' || $1 || '%')
+     GROUP BY tag ORDER BY (tag LIKE $1 || '%') DESC, books DESC LIMIT 8;`,
+    [t]
+  ).catch((err) => { if (err.code === "42P01") return { rows: [] }; throw err; });
+  res.json({ tags: rows });
 }));
 
 app.get("/api/books/:id", wrap(async (req, res) => {
@@ -196,7 +239,11 @@ app.get("/api/books/:id", wrap(async (req, res) => {
     if (err.code !== "42P01") console.warn("[authors]", err.message);
     return [];
   });
-  res.json({ ...rows[0], series, authorAccounts });
+  // the readers' tags (book_reader_tags) - shown as #chips that search by tag
+  const { rows: tags } = await db.query(
+    `SELECT tag FROM book_reader_tags WHERE book_id = $1 ORDER BY count DESC LIMIT 10;`, [id]
+  ).catch(() => ({ rows: [] }));
+  res.json({ ...rows[0], series, authorAccounts, readerTags: tags.map((t) => t.tag) });
 }));
 
 app.get("/api/books/:id/similar", wrap(async (req, res) => {
