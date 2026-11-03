@@ -19,12 +19,17 @@
  *   GET    /api/me/shelf                 { saved: [...], finished: [...] }  (from the events)
  *   GET    /api/me/consents              { needed, versions, current: { terms, privacy, age_16, research } }
  *   POST   /api/me/consents              { terms, privacy, age16, research, source } - only the keys sent are saved
+ *   GET    /api/me/recommendations/rows  the For You page as shelves: "Top 10" + one row per genre
+ *                                        (your genres first), each up to 20 books - same model, one call
  *   GET    /api/me/author                author status: type, linked books, latest request, profile, pen name to prefill
  *   PUT    /api/me/author/profile        { penName, bio, website } - the author's page (authors only)
  *   GET    /api/me/author/insights       how readers respond to the author's books (server/author-insights.js)
  *   GET    /api/me/author/insights/audience?book=<id>|all   genres of the readers who loved it, books they also loved
- *   POST   /api/me/author-request        { penName, books, message } - "I am the author of these books"
+ *   POST   /api/me/author-request        { penName, books, publisherName, publisherEmail, message, confirm }
+ *                                        "I am an author" - BookBridge emails the publisher to confirm
+ *   POST   /api/me/author-request/resend a new confirmation email (once a day)
  *   GET    /api/me/insights              personal reading analytics (server/insights.js)
+ *   GET    /api/me/searches              recent searches; POST / DELETE too (server/search-history.js)
  *   GET    /api/me/recommendations       ?count=10 [&exclude=1,2,3] [&city=Jerusalem | &lat=&lng=&radiusKm=] [&mode=filter|boost]
  *                                        exclude = books already shown ("Recommend more") - 10 NEW ones
  *
@@ -34,11 +39,15 @@
 const express = require("express");
 const { computeInsights } = require("./insights");
 const { computeAuthorInsights, computeAudience } = require("./author-insights");
-const { notifyAuthorRequest } = require("./mailer");
+const mailer = require("./mailer");
+const { peekInfo, warmPeek, addPeek } = require("./book-peek");
+const { emailPublisher, verifiedNamesOf, EMAIL_RE, RESEND_HOURS } = require("./author-verification");
 const { authorPage, knownPenName, profilesTable, cleanWebsite } = require("./author-profiles");
 const { CONSENT_VERSIONS, REQUIRED, SOURCES, BODY_KEYS, currentConsents, consentNeeded } = require("./consents");
 const path = require("path");
 const { getOnboardingBooks } = require(path.join(__dirname, "..", "onboarding", "onboarding"));
+const { GENRES } = require(path.join(__dirname, "..", "onboarding", "genres"));
+const GENRE_LABEL = new Map(GENRES.map((g) => [g.key, g.label]));
 
 const EVENT_TYPES = new Set(["saved", "unsaved", "started", "finished", "dismissed", "clicked"]);
 const CITIES = new Set(["Jerusalem", "Tel Aviv-Yafo"]);
@@ -77,7 +86,7 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     }
   }
 
-  async function recommendFor(userId, count, nearby, exclude = []) {
+  async function recommendFor(userId, count, nearby, exclude = [], extra = {}) {
     const [{ rows: ratings }, { rows: genres }, { rows: dismissed }] = await Promise.all([
       db.query(`SELECT book_id, rating FROM user_ratings WHERE user_id = $1;`, [userId]),
       db.query(`SELECT genre_key FROM user_genres WHERE user_id = $1;`, [userId]),
@@ -98,7 +107,7 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     const result = await hybrid.getHybridRecommendations(
       ratings.map((r) => ({ bookId: r.book_id, rating: r.rating })),
       count,
-      { genres: genres.map((g) => g.genre_key), nearby, diversify: true, exclude }
+      { genres: genres.map((g) => g.genre_key), nearby, diversify: true, exclude, ...extra }
     );
     return { ...result, recommendations: result.recommendations.map(withTexts) };
   }
@@ -141,20 +150,43 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
         [req.user.id]
       ),
       db.query(
-        `SELECT id, pen_name, books, status, note, created_at, decided_at FROM author_requests
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1;`,
+        `SELECT * FROM author_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1;`,
         [req.user.id]
       ).catch((err) => (err.code === "42P01" ? { rows: [] } : Promise.reject(err))), // table not created yet
     ]);
     const r = reqs[0];
+    const [verifiedNames, claims, uploads] = await Promise.all([
+      verifiedNamesOf(db, req.user.id),
+      db.query(
+        `SELECT c.id, c.status, c.note, c.created_at, b.id AS book_id, b.title FROM book_claims c JOIN books b ON b.id = c.book_id
+         WHERE c.user_id = $1 AND (c.status = 'pending' OR c.decided_at > now() - interval '30 days') ORDER BY c.created_at DESC LIMIT 50;`,
+        [req.user.id]
+      ).then((x) => x.rows).catch(() => []),
+      db.query(`SELECT book_id FROM author_uploads WHERE user_id = $1;`, [req.user.id]).then((x) => x.rows.map((u) => u.book_id)).catch(() => []),
+    ]);
+    const sentAt = r?.email_sent_at ? new Date(r.email_sent_at) : null;
     const page = books.length ? await authorPage(db, req.user.id).catch(() => null) : null;
+    // a verified author with no linked book yet still has a profile (pen name, bio)
+    const own = !page && req.user.user_type === "author"
+      ? (await db.query(`SELECT pen_name, bio, website FROM author_profiles WHERE user_id = $1;`, [req.user.id]).catch(() => ({ rows: [] }))).rows[0]
+      : null;
     res.json({
       isAuthor: req.user.user_type === "author",
-      books,
+      books: await addPeek(db, books), // + blurb / rating for the hover card
       userId: req.user.id,
-      profile: page ? { penName: page.penName, bio: page.bio, website: page.website } : null,
+      profile: page ? { penName: page.penName, bio: page.bio, website: page.website }
+        : own ? { penName: own.pen_name, bio: own.bio, website: own.website } : null,
       penName: page?.penName || (await knownPenName(db, req.user.id).catch(() => null)), // to prefill the next request
-      request: r ? { id: Number(r.id), penName: r.pen_name, books: r.books, status: r.status, note: r.note, createdAt: r.created_at, decidedAt: r.decided_at } : null,
+      verifiedNames,
+      claims: claims.map((c) => ({ id: Number(c.id), status: c.status, note: c.note, createdAt: c.created_at, bookId: c.book_id, title: c.title })),
+      uploads,
+      publisherVerification: mailer.publisherVerificationReady(),
+      request: r ? {
+        id: Number(r.id), penName: r.pen_name, books: r.books, status: r.status, note: r.note, createdAt: r.created_at, decidedAt: r.decided_at,
+        publisherName: r.publisher_name || null, publisherEmail: r.publisher_email || null,
+        emailSentAt: r.email_sent_at || null, publisherDecision: r.publisher_decision || null,
+        canResend: r.status === "pending" && Boolean(r.publisher_email) && (!sentAt || Date.now() - sentAt > RESEND_HOURS * 36e5 || new Date(r.token_expires_at) < new Date()),
+      } : null,
     });
   }));
 
@@ -168,12 +200,12 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     const book = req.query.book === "all" || req.query.book === undefined ? "all" : checkId(req.query.book);
     const data = await computeAudience(db, req.user.id, book);
     if (!data) return res.status(404).json({ error: "not one of your books" });
-    res.json(data);
+    res.json({ ...data, alsoLoved: await addPeek(db, data.alsoLoved || []) }); // + hover card data
   }));
 
   router.put("/author/profile", wrap(async (req, res) => {
     const { rowCount } = await db.query(`SELECT 1 FROM author_books WHERE user_id = $1 LIMIT 1;`, [req.user.id]);
-    if (!rowCount) return res.status(403).json({ error: "only authors linked to a book have an author page" });
+    if (!rowCount && req.user.user_type !== "author") return res.status(403).json({ error: "only authors have an author page" });
     if (!(await profilesTable(db))) throw new BadRequest("author pages are not set up yet (db/create-author-profiles-table.js)");
     const penName = typeof req.body.penName === "string" ? req.body.penName.trim() : "";
     if (!penName) throw new BadRequest("pen name is required");
@@ -199,24 +231,46 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     };
     const penName = text(req.body.penName, 120, "pen name");
     const books = text(req.body.books, 2000, "your books");
+    const publisherName = text(req.body.publisherName, 200, "publisher");
+    const publisherEmail = text(req.body.publisherEmail, 254, "publisher email").toLowerCase();
     const message = text(req.body.message, 2000, "message", false);
     if (req.body.confirm !== true) throw new BadRequest("please confirm that you are the author of these books");
     if (req.user.user_type === "librarian") throw new BadRequest("library accounts cannot become authors");
-    let id;
+    if (!EMAIL_RE.test(publisherEmail)) throw new BadRequest("publisher email: please check the address");
+    if (!mailer.publisherVerificationReady()) throw new BadRequest("publisher verification is not set up yet (PUBLISHER_EMAILS on the server)");
+    const { rows: me } = await db.query(`SELECT name, email FROM neon_auth."user" WHERE id = $1;`, [req.user.authUserId]);
+    if (me[0]?.email && me[0].email.toLowerCase() === publisherEmail) throw new BadRequest("the publisher's email can't be your own email");
+    if (!mailer.isPublisherEmail(publisherEmail)) {
+      throw new BadRequest("we can only email publishers we know - please check the address, or contact the BookBridge team");
+    }
+    let r;
     try {
-      ({ rows: [{ id }] } = await db.query(
-        `INSERT INTO author_requests (user_id, pen_name, books, message) VALUES ($1, $2, $3, $4) RETURNING id;`,
-        [req.user.id, penName, books, message]
+      ({ rows: [r] } = await db.query(
+        `INSERT INTO author_requests (user_id, pen_name, books, message, publisher_name, publisher_email)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;`,
+        [req.user.id, penName, books, message, publisherName, publisherEmail]
       ));
     } catch (err) {
-      if (err.code === "23505") throw new BadRequest("you already have a request waiting for review");
+      if (err.code === "23505") throw new BadRequest("you already have a request waiting for your publisher");
       throw err;
     }
-    res.status(201).json({ ok: true });
-    // an email to the project team - after answering, so it never slows or breaks the request
-    db.query(`SELECT name, email FROM neon_auth."user" WHERE id = $1;`, [req.user.authUserId])
-      .then(({ rows }) => notifyAuthorRequest({ id: Number(id), name: rows[0]?.name, email: rows[0]?.email, penName, books, message }))
-      .catch((err) => console.warn("[mail] author request email:", err.message));
+    const emailed = await emailPublisher(db, mailer, r, me[0]?.name || "a reader");
+    res.status(201).json({ ok: true, emailed });
+  }));
+
+  router.post("/author-request/resend", wrap(async (req, res) => {
+    const { rows } = await db.query(
+      `SELECT * FROM author_requests WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC LIMIT 1;`, [req.user.id]
+    );
+    const r = rows[0];
+    if (!r || !r.publisher_email) throw new BadRequest("no request is waiting for a publisher");
+    const sentAt = r.email_sent_at ? new Date(r.email_sent_at) : null;
+    const expired = r.token_expires_at && new Date(r.token_expires_at) < new Date();
+    if (sentAt && !expired && Date.now() - sentAt < RESEND_HOURS * 36e5) throw new BadRequest("the email was sent less than a day ago - please give your publisher time");
+    if (!mailer.isPublisherEmail(r.publisher_email)) throw new BadRequest("this publisher email is not on the list any more");
+    const { rows: me } = await db.query(`SELECT name FROM neon_auth."user" WHERE id = $1;`, [req.user.authUserId]);
+    const emailed = await emailPublisher(db, mailer, r, me[0]?.name || "a reader");
+    res.json({ ok: true, emailed });
   }));
 
   // ---------- reading analytics (the Insights page) ----------
@@ -358,6 +412,66 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
   }));
 
   // ---------- recommendations from the saved ratings ----------
+  // ---------- For You as shelves (like a streaming service: a row per genre) ----------
+  // One call to the same hybrid model with a big pool, then: the first 10 = "Top picks",
+  // the rest is shelved by genre - the user's genres first, then the genres that came up
+  // most. Each book sits on ONE shelf, in the model's order. Nothing new is learned
+  // here: it is only how the list is shown.
+  const ROW_POOL = 160, ROW_MAX = 20, ROW_MIN = 4, ROWS_MAX = 8, TOP = 10;
+  const GOODREADS_KEY = new Map(), GOOGLE_KEY = new Map(), LABEL_KEY = new Map();
+  for (const g of GENRES) {
+    for (const v of g.goodreads) GOODREADS_KEY.set(v, [...(GOODREADS_KEY.get(v) || []), g.key]);
+    for (const v of g.google) GOOGLE_KEY.set(v, [...(GOOGLE_KEY.get(v) || []), g.key]);
+    LABEL_KEY.set(g.label, [g.key]); // books uploaded by authors carry the genre name in categories
+  }
+  const keysOf = (b) => [...new Set([
+    ...(b.main_genres || []).flatMap((v) => GOODREADS_KEY.get(v) || []),
+    ...(b.goodbooks_id ? [] : (b.categories || []).flatMap((v) => GOOGLE_KEY.get(v) || LABEL_KEY.get(v) || [])),
+  ])];
+
+  warmPeek(db); // sum the dataset ratings at server start, so the first visitor does not wait
+
+  router.get("/recommendations/rows", wrap(async (req, res) => {
+    let nearby;
+    const where = nearbyFromQuery(req.query);
+    if (where) nearby = parseNearby(where);
+    // a few more places for books without ratings (new books, author uploads) - they get their own exposure
+    const r = await recommendFor(req.user.id, ROW_POOL, nearby, [], { slots: 12 });
+    const recs = r.recommendations;
+    const top = recs.slice(0, TOP);
+    const rest = recs.slice(TOP);
+    const { rows: info } = rest.length
+      ? await db.query(`SELECT id, goodbooks_id, main_genres, categories FROM books WHERE id = ANY($1::int[]);`, [rest.map((b) => b.id)])
+      : { rows: [] };
+    const genresOf = new Map(info.map((b) => [b.id, keysOf(b)]));
+    const chosen = (r.genres || []).filter((k) => GENRE_LABEL.has(k));
+    const freq = new Map();
+    for (const b of rest) for (const k of genresOf.get(b.id) || []) freq.set(k, (freq.get(k) || 0) + 1);
+    const order = [...chosen, ...[...freq.keys()].filter((k) => !chosen.includes(k)).sort((a, b) => freq.get(b) - freq.get(a))];
+    const shelves = new Map(order.map((k) => [k, []]));
+    const leftover = [];
+    for (const b of rest) {
+      const ks = genresOf.get(b.id) || [];
+      const k = order.find((g) => ks.includes(g) && shelves.get(g).length < ROW_MAX);
+      if (k) shelves.get(k).push(b); else leftover.push(b);
+    }
+    const rows = [];
+    for (const k of order) {
+      const books = shelves.get(k);
+      if (books.length >= ROW_MIN && rows.length < ROWS_MAX) rows.push({ key: k, label: GENRE_LABEL.get(k), chosen: chosen.includes(k), books });
+      else leftover.push(...books);
+    }
+    if (leftover.length >= ROW_MIN) rows.push({ key: "more", label: "More picks for you", chosen: false, books: leftover.slice(0, ROW_MAX) });
+    // for the floating card on hover: a short blurb + the overall rating (server/book-peek.js)
+    const shown = [...top, ...rows.flatMap((x) => x.books)];
+    const hover = await peekInfo(db, shown.map((b) => b.id));
+    const add = (b) => ({ ...b, ...(hover.get(b.id) || {}) });
+    res.json({
+      cfModel: r.cfModel, genres: chosen, ...(r.nearby ? { nearby: r.nearby } : {}),
+      top: top.map(add), rows: rows.map((x) => ({ ...x, books: x.books.map(add) })),
+    });
+  }));
+
   router.get("/recommendations", wrap(async (req, res) => {
     const count = Math.min(Math.max(Number(req.query.count) || 10, 1), 30);
     let nearby;
@@ -370,6 +484,9 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     const exclude = String(req.query.exclude || "").split(",").filter(Boolean).slice(0, 100).map(Number).filter(Number.isInteger);
     res.json(await recommendFor(req.user.id, count, nearby, exclude));
   }));
+
+  // search history: GET/POST/DELETE /api/me/searches (server/search-history.js)
+  require("./search-history")(router, { db, h });
 
   return router;
 };

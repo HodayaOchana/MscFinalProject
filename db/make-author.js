@@ -1,13 +1,16 @@
 /**
- * Make a user an AUTHOR of some books (admin script).
+ * Admin script for author accounts - for demos and for fixing things by hand.
+ * (Normally an author is confirmed by their PUBLISHER through the emailed link -
+ * see server/author-verification.js.)
  *
- * An author account gets an "Author" badge in the discussion of THEIR books and
- * can pin one post there. Run it after checking that the person really is the
- * author (a request from the Account page - step 2 - or for a demo).
+ *   node db/make-author.js --email reader@mail.com --find "Mockingjay"          show matching books (nothing changes)
+ *   node db/make-author.js --email reader@mail.com --verify "Suzanne Collins"   make them an author with this VERIFIED
+ *                                                                              name (as if the publisher confirmed it)
+ *   node db/make-author.js --email reader@mail.com --remove                     back to a regular reader: removes the
+ *                                                                              book links and the verified names
  *
- *   node db/make-author.js --email reader@mail.com --find "Mockingjay"     show matching books (nothing changes)
- *   node db/make-author.js --email reader@mail.com --books 1943,2025       make them the author of these books
- *   node db/make-author.js --email reader@mail.com --remove                back to a regular reader (removes the links)
+ * After --verify the author links their books in the app ("Add a book that's
+ * already here"): books with the verified name are linked at once.
  */
 
 const path = require("path");
@@ -17,13 +20,13 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const EMAIL = arg("--email");
 const FIND = arg("--find");
-const BOOKS = (arg("--books") || "").split(",").map(Number).filter(Number.isInteger);
+const VERIFY = (arg("--verify") || "").trim();
 const REMOVE = process.argv.includes("--remove");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 async function main() {
-  if (!EMAIL) throw new Error('usage: --email <user email> and one of: --find "title" | --books 1,2 | --remove');
+  if (!EMAIL) throw new Error('usage: --email <user email> and one of: --find "title" | --verify "Pen Name" | --remove');
   const { rows: u } = await pool.query(
     `SELECT u.id, u.user_type, a.name FROM users u JOIN neon_auth."user" a ON a.id = u.auth_user_id WHERE lower(a.email) = lower($1);`,
     [EMAIL]
@@ -38,37 +41,58 @@ async function main() {
       [FIND]
     );
     rows.forEach((b) => console.log(`  ${String(b.id).padStart(6)}  ${b.title} - ${b.author || "?"}`));
-    console.log("\nNothing changed. Use --books <ids> to link the books.");
+    console.log("\nNothing changed.");
     return;
   }
-  if (REMOVE) {
-    if (user.user_type === "librarian") throw new Error("this is a librarian account - not changed");
-    await pool.query(`DELETE FROM author_books WHERE user_id = $1;`, [user.id]);
-    await pool.query(`UPDATE users SET user_type = 'reader' WHERE id = $1;`, [user.id]);
-    console.log("Done: regular reader again, author links removed.");
-    return;
-  }
-  if (!BOOKS.length) throw new Error("give --books 1,2 (ids from --find)");
-  const { rows: found } = await pool.query(`SELECT id, title FROM books WHERE id = ANY($1::int[]);`, [BOOKS]);
-  const missing = BOOKS.filter((id) => !found.some((b) => b.id === id));
-  if (missing.length) throw new Error(`unknown book ids: ${missing.join(", ")}`);
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(`UPDATE users SET user_type = 'author' WHERE id = $1 AND user_type <> 'librarian';`, [user.id]);
-    await client.query(
-      `INSERT INTO author_books (user_id, book_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING;`,
-      [user.id, BOOKS]
+  if (user.user_type === "librarian") throw new Error("this is a librarian account - not changed");
+
+  if (VERIFY) {
+    if (VERIFY.length > 120) throw new Error("the name: up to 120 characters");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`UPDATE users SET user_type = 'author' WHERE id = $1;`, [user.id]);
+      await client.query(
+        `INSERT INTO author_profiles (user_id, pen_name, verified_names) VALUES ($1, $2, ARRAY[$2])
+         ON CONFLICT (user_id) DO UPDATE SET verified_names =
+           (SELECT array_agg(DISTINCT x) FROM unnest(author_profiles.verified_names || ARRAY[$2]) AS x),
+           updated_at = now();`,
+        [user.id, VERIFY]
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+    const { rows: n } = await pool.query(
+      `SELECT count(*)::int AS n FROM books WHERE EXISTS (SELECT 1 FROM unnest(authors) a WHERE lower(a) = lower($1));`, [VERIFY]
     );
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
+    console.log(`Done: an author, verified as "${VERIFY}". ${n[0].n} catalog book(s) carry this name - they can link them in the app.`);
+    return;
   }
-  console.log(`Done: author of ${found.map((b) => `"${b.title}"`).join(", ")}.`);
+
+  if (REMOVE) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`DELETE FROM author_books WHERE user_id = $1;`, [user.id]);
+      await client.query(`UPDATE author_profiles SET verified_names = '{}' WHERE user_id = $1;`, [user.id]);
+      await client.query(`UPDATE users SET user_type = 'reader' WHERE id = $1;`, [user.id]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+    console.log("Done: a regular reader again - book links and verified names removed (books they uploaded stay in the catalog).");
+    return;
+  }
+
+  throw new Error('give one of: --find "title" | --verify "Pen Name" | --remove');
 }
 
 main()

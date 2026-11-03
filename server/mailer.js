@@ -1,5 +1,7 @@
 /**
- * Emails to the PROJECT TEAM only (never to users) - e.g. "a new author request".
+ * Emails from BookBridge - to the PROJECT TEAM, and to PUBLISHERS that confirm an author.
+ * Never to arbitrary addresses: a publisher email must be on PUBLISHER_EMAILS
+ * (so nobody can use the form to send mail through the project account).
  * Sent through the project's Gmail with an App Password (Google's official way
  * for programs to use an account).
  *
@@ -8,6 +10,8 @@
  *   SMTP_PASS     the 16-letter Google App Password (no spaces) - never in git
  *   ADMIN_EMAILS  who receives them, comma-separated (also: who may open /admin pages)
  *   APP_URL       the website address for links in the email (default http://localhost:3000)
+ *   PUBLISHER_EMAILS  publisher contact emails that may receive "confirm your author" links,
+ *                 comma-separated. In the demo: your own email, playing the publisher.
  *
  * Safe for the account:
  *   - at most MAX_PER_DAY emails a day (Gmail limits sending; we stay far below)
@@ -22,6 +26,7 @@
 const MAX_PER_DAY = 20;
 const ADMINS = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
 const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+const PUBLISHERS = (process.env.PUBLISHER_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
 
 let transporter = null;
 let disabled = false;           // set after Google refuses the login - no more attempts until restart
@@ -29,7 +34,7 @@ let sentToday = { day: "", n: 0 };
 
 function getTransporter() {
   if (transporter || disabled) return transporter;
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !ADMINS.length) return null;
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
   let nodemailer;
   try { nodemailer = require("nodemailer"); } catch {
     console.warn("[mail] nodemailer is not installed (npm install nodemailer) - no emails.");
@@ -45,10 +50,10 @@ function getTransporter() {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-/** Send to the admins. Never throws - returns true if sent. */
-async function sendToAdmins(subject, text, html) {
+/** Send one email (all sending goes through here: one daily limit). Never throws - returns true if sent. */
+async function sendMail(to, subject, text, html) {
   const t = getTransporter();
-  if (!t) return false;
+  if (!t || !to) return false;
   const day = new Date().toISOString().slice(0, 10);
   if (sentToday.day !== day) sentToday = { day, n: 0 };
   if (sentToday.n >= MAX_PER_DAY) {
@@ -57,7 +62,7 @@ async function sendToAdmins(subject, text, html) {
   }
   sentToday.n++;
   try {
-    await t.sendMail({ from: `BookBridge <${process.env.SMTP_USER}>`, to: ADMINS.join(", "), subject, text, html });
+    await t.sendMail({ from: `BookBridge <${process.env.SMTP_USER}>`, to, subject, text, html });
     return true;
   } catch (err) {
     console.warn(`[mail] not sent (${err.code || err.name}): ${err.message}`);
@@ -69,26 +74,42 @@ async function sendToAdmins(subject, text, html) {
   }
 }
 
-/** "A new author request" - with a button to the admin page */
-function notifyAuthorRequest({ id, name, email, penName, books, message }) {
-  const link = `${APP_URL}/admin/author-requests?id=${id}`;
+const sendToAdmins = (subject, text, html) => (ADMINS.length ? sendMail(ADMINS.join(", "), subject, text, html) : Promise.resolve(false));
+
+/** May this address receive a publisher confirmation link? */
+const isPublisherEmail = (email) => Boolean(email) && PUBLISHERS.includes(String(email).trim().toLowerCase());
+const publisherVerificationReady = () => PUBLISHERS.length > 0;
+const mailReady = () => Boolean(process.env.SMTP_USER && process.env.SMTP_PASS) && !disabled;
+
+/**
+ * "Is <pen name> your author?" - to the publisher, with a one-time link.
+ * The link opens a page with Confirm / Decline buttons (a click on the link
+ * alone decides nothing - mail scanners open links automatically).
+ */
+function sendPublisherConfirmation({ to, token, penName, accountName, publisherName, books, expiresAt }) {
+  const link = `${APP_URL}/publisher/confirm?token=${encodeURIComponent(token)}`;
+  const until = new Date(expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const text =
-    `New author request #${id}\n\nFrom: ${name} <${email}>\nPen name: ${penName}\nBooks:\n${books}\n` +
-    (message ? `\nMessage:\n${message}\n` : "") + `\nReview it: ${link}\n`;
+    `Hello${publisherName ? ` ${publisherName}` : ""},\n\n` +
+    `A BookBridge user (${accountName}) says they are your author, publishing as "${penName}".\n` +
+    `Books they listed:\n${books}\n\n` +
+    `Please confirm or decline here (the link works once, until ${until}):\n${link}\n\n` +
+    `If you don't know this person, choose Decline or ignore this email.\n`;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px;color:#2B211C">
-      <h2 style="margin:0 0 12px">New author request #${id}</h2>
-      <p style="margin:4px 0"><b>From:</b> ${esc(name)} &lt;${esc(email)}&gt;</p>
-      <p style="margin:4px 0"><b>Pen name:</b> ${esc(penName)}</p>
-      <p style="margin:12px 0 4px"><b>Books:</b></p>
+      <h2 style="margin:0 0 12px">Is ${esc(penName)} your author?</h2>
+      <p style="margin:4px 0">A BookBridge user (<b>${esc(accountName)}</b>) says they publish with you as <b>${esc(penName)}</b>.</p>
+      <p style="margin:12px 0 4px"><b>Books they listed:</b></p>
       <pre style="white-space:pre-wrap;font-family:inherit;background:#F7F1E8;padding:10px;border-radius:8px;margin:0">${esc(books)}</pre>
-      ${message ? `<p style="margin:12px 0 4px"><b>Message:</b></p><pre style="white-space:pre-wrap;font-family:inherit;margin:0">${esc(message)}</pre>` : ""}
-      <p style="margin:24px 0"><a href="${esc(link)}" style="background:#A24B25;color:#FFFBF4;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Review request</a></p>
-      <p style="font-size:12px;color:#6B5B4E">Check that the person really is the author before approving. You will be asked to sign in with the project account.</p>
+      <p style="margin:24px 0"><a href="${esc(link)}" style="background:#A24B25;color:#FFFBF4;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Confirm or decline</a></p>
+      <p style="font-size:12px;color:#6B5B4E">The link works once, until ${esc(until)}. If you don't know this person, choose Decline or simply ignore this email.</p>
     </div>`;
-  return sendToAdmins(`BookBridge: author request from ${penName}`, text, html);
+  return sendMail(to, `BookBridge: please confirm your author ${penName}`, text, html);
 }
 
 const isAdminEmail = (email) => Boolean(email) && ADMINS.includes(String(email).toLowerCase());
 
-module.exports = { sendToAdmins, notifyAuthorRequest, isAdminEmail, ADMINS };
+module.exports = {
+  sendToAdmins, isAdminEmail, ADMINS,
+  sendPublisherConfirmation, isPublisherEmail, publisherVerificationReady, mailReady,
+};

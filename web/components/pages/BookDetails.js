@@ -5,14 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
+import BookPeek, { hasPeek } from "@/components/BookPeek";
 import Stars from "@/components/Stars";
+import ShelfRow from "@/components/ShelfRow";
 import BookshelfLoader from "@/components/BookshelfLoader";
 import BookSocial from "@/components/pages/BookSocial";
-import { scrollToNewItem } from "@/lib/scroll";
 import { api } from "@/lib/api";
 
 const CITIES = ["Jerusalem", "Tel Aviv-Yafo"];
-const SIMILAR_PAGE = 6; // "Show more" adds 6, the server stops at 30
+const SIMILAR_FIRST = 12; // a shelf that scrolls sideways: 12 first,
+const SIMILAR_PAGE = 6;   // then 6 more each time you reach its end (the server stops at 30)
 const year = (d) => (d ? String(d).slice(0, 4) : null);
 
 // The book's authors; a name that belongs to an author account on BookBridge links to their page.
@@ -41,7 +43,7 @@ export default function BookDetails({ id }) {
   const [similar, setSimilar] = useState(null); // null = loading
   const [similarMore, setSimilarMore] = useState(false);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
-  const moreRef = useRef(null);
+  const similarBusy = useRef(false); // scroll events come fast: load the next 6 only once
   const [myRating, setMyRating] = useState(0);
   const [city, setCity] = useState("Jerusalem");
   const [avail, setAvail] = useState(null);
@@ -51,7 +53,7 @@ export default function BookDetails({ id }) {
 
   useEffect(() => {
     api(`/api/books/${id}`, { auth: false }).then(setBook).catch((e) => setError(e.message));
-    api(`/api/books/${id}/similar?count=${SIMILAR_PAGE}`, { auth: false })
+    api(`/api/books/${id}/similar?count=${SIMILAR_FIRST}`, { auth: false })
       .then((r) => { setSimilar(r.books); setSimilarMore(r.hasMore); })
       .catch(() => setSimilar([]));
     api("/api/me/ratings").then((r) => setMyRating(r.ratings.find((x) => String(x.bookId) === String(id))?.rating || 0)).catch(() => {});
@@ -65,14 +67,15 @@ export default function BookDetails({ id }) {
   }, [id, city]);
 
   async function moreSimilar() {
+    if (similarBusy.current || !similarMore) return;
+    similarBusy.current = true;
     setLoadingSimilar(true);
     try {
       const r = await api(`/api/books/${id}/similar?count=${SIMILAR_PAGE}&offset=${similar.length}`, { auth: false });
-      setSimilar((s) => [...s, ...r.books.map((b) => ({ ...b, fresh: true }))]); // fresh: fade in softly
-      if (r.books[0]) scrollToNewItem(`sim-${r.books[0].id}`); // glide to the first new book once it is shown
+      setSimilar((s) => [...s, ...r.books.filter((b) => !s.some((x) => x.id === b.id)).map((b) => ({ ...b, fresh: true }))]); // fresh: fade in softly
       setSimilarMore(r.hasMore);
     } catch { setSimilarMore(false); }
-    finally { setLoadingSimilar(false); }
+    finally { setLoadingSimilar(false); similarBusy.current = false; }
   }
 
   async function rate(n) {
@@ -165,24 +168,17 @@ export default function BookDetails({ id }) {
 
         {similar === null && <BookshelfLoader label="Finding similar books…" />}
         {similar?.length > 0 && (
-          <section aria-labelledby="similar" className="flex flex-col gap-4">
-            <h2 id="similar" className="m-0 font-serif text-[34px] font-semibold">Similar in spirit</h2>
-            <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
-              {similar.map((s) => (
-                <Link key={s.id} id={`sim-${s.id}`} href={`/books/${s.id}`} className={`${s.fresh ? "fresh-in " : ""}flex flex-col gap-2 text-ink no-underline hover:text-rust`}>
-                  <Cover book={s} />
-                  <span className="text-sm font-bold leading-snug">{s.title}</span>
-                  <span className="text-[13px] text-muted">{s.authors?.[0]}</span>
-                </Link>
-              ))}
-            </div>
-            <div ref={moreRef}>{loadingSimilar && <BookshelfLoader label="Finding more…" />}</div>
-            {similarMore && !loadingSimilar && (
-              <div className="flex justify-center">
-                <button type="button" onClick={moreSimilar} className="btn btn-outline">Show {SIMILAR_PAGE} more</button>
-              </div>
-            )}
-          </section>
+          <ShelfRow id="similar" title="Similar in spirit" count={similar.length} titleClass="text-[34px]"
+            onReachEnd={similarMore ? moreSimilar : undefined} loading={loadingSimilar}>
+            {similar.map((s) => (
+              <Link key={s.id} id={`sim-${s.id}`} href={`/books/${s.id}`} aria-describedby={hasPeek(s) ? `peek-${s.id}` : undefined}
+                className={`${s.fresh ? "fresh-in " : ""}group relative flex w-[176px] shrink-0 snap-start flex-col gap-2 text-ink no-underline hover:z-20 hover:text-rust focus-visible:z-20 sm:w-[190px]`}>
+                <div className="relative"><Cover book={s} /><BookPeek book={s} /></div>
+                <span className="text-sm font-bold leading-snug">{s.title}</span>
+                <span className="text-[13px] text-muted">{s.authors?.[0]}</span>
+              </Link>
+            ))}
+          </ShelfRow>
         )}
       </div>
     </AppShell>

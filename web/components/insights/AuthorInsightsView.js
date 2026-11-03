@@ -7,7 +7,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Cover from "@/components/Cover";
+import BookPeek, { hasPeek } from "@/components/BookPeek";
 import BookshelfLoader from "@/components/BookshelfLoader";
+import BookPicker from "./BookPicker";
 import { Tile, Section, HBars } from "./InsightsView";
 import { api } from "@/lib/api";
 
@@ -138,8 +140,8 @@ function Audience({ bookId, preview }) {
             <ul className="m-0 grid list-none gap-4 p-0 [grid-template-columns:repeat(auto-fill,minmax(96px,1fr))]">
               {alsoLoved.map((b) => (
                 <li key={b.id}>
-                  <Link href={`/books/${b.id}`} className="flex flex-col gap-1.5 text-ink no-underline hover:text-rust">
-                    <Cover book={b} small />
+                  <Link href={`/books/${b.id}`} aria-describedby={hasPeek(b) ? `peek-${b.id}` : undefined} className="group relative flex flex-col gap-1.5 text-ink no-underline hover:z-20 hover:text-rust focus-visible:z-20">
+                    <div className="relative"><Cover book={b} small /><BookPeek book={b} variant="pop" /></div>
                     <span className="text-[13px] font-bold leading-snug">{b.title}</span>
                     <span className="text-xs text-ink-soft">{b.share}% of your readers{b.generalShare !== null ? ` · ${b.generalShare}% of all` : ""}</span>
                     {b.lift >= 1.2 && <span className="self-start rounded-full bg-moss-soft px-2 py-0.5 text-[11px] font-bold text-moss-dark">{b.lift.toFixed(1)}× more</span>}
@@ -175,16 +177,7 @@ export default function AuthorInsightsView({ preview = null }) {
         <p className="m-0 text-ink-soft">Counts and averages only – you never see who rated, saved or wrote.</p>
       </div>
 
-      {!single && (
-        <div role="tablist" aria-label="Which book" className="flex flex-wrap gap-2">
-          {[{ id: "all", title: "All my books" }, ...data.books].map((x) => (
-            <button key={x.id} type="button" role="tab" aria-selected={pick === x.id} onClick={() => setPick(x.id)}
-              className={`cursor-pointer rounded-full border px-4 py-2 text-sm ${pick === x.id ? "border-ink bg-ink text-parchment" : "border-line-strong bg-transparent text-ink hover:border-rust hover:text-rust"}`}>
-              {x.title}
-            </button>
-          ))}
-        </div>
-      )}
+      {!single && <BookPicker books={data.books} all={all} value={pick} onChange={setPick} />}
 
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         <Tile label="Ratings on BookBridge" value={fmt(b.ratings)} sub={b.avgRating ? `average ${b.avgRating} ★` : "no ratings yet"} />

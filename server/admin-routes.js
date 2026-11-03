@@ -2,14 +2,19 @@
  * Admin pages' API - for the project team only (ADMIN_EMAILS in .env, see server/mailer.js).
  * The signed-in user's email (in Neon Auth) must be on that list; anyone else gets 403.
  *
- *   GET  /api/admin/summary                              { admin, pendingAuthorRequests } - for the bell in the header
+ *   GET  /api/admin/summary                              { admin, pendingBookClaims, ... } - for the bell in the header
  *                                                        (any signed-in user may ask: non-admins just get { admin: false })
  *   GET  /api/admin/me                                   { admin: true } - is this user an admin?
  *   GET  /api/admin/author-requests?status=pending|all   requests with the user's name and email
- *   POST /api/admin/author-requests/:id/approve          { bookIds: [..], note } - the user becomes an author of these books
  *   POST /api/admin/author-requests/:id/reject           { note }
  *
- * Same rules as the script db/author-requests.js (which still works too).
+ *   GET  /api/admin/book-claims?status=pending|all       "this is my book" claims that need the team
+ *   POST /api/admin/book-claims/:id/approve|reject       { note }
+ *   GET  /api/admin/uploads                              books uploaded by authors (newest first)
+ *   DELETE /api/admin/uploads/:bookId                    remove an uploaded book from the catalog
+ *
+ * Authors are verified by their publisher (server/author-verification.js); the team
+ * sees the requests, decides book claims, and can remove uploaded books.
  */
 
 const express = require("express");
@@ -27,8 +32,13 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
   // The bell: asked on every page by every signed-in user, so no 403 here - just "not an admin"
   router.get("/summary", wrap(async (req, res) => {
     if (!isAdminEmail(await emailOf(req))) return res.json({ admin: false });
-    const { rows } = await db.query(`SELECT count(*)::int AS n FROM author_requests WHERE status = 'pending';`);
-    res.json({ admin: true, pendingAuthorRequests: rows[0].n });
+    const count = (sql) => db.query(sql).then((r) => r.rows[0].n).catch((err) => (err.code === "42P01" ? 0 : Promise.reject(err)));
+    const [claims, waiting] = await Promise.all([
+      count(`SELECT count(*)::int AS n FROM book_claims WHERE status = 'pending';`),
+      count(`SELECT count(*)::int AS n FROM author_requests WHERE status = 'pending';`),
+    ]);
+    // the bell counts what needs the TEAM: book claims (author requests wait for the publisher)
+    res.json({ admin: true, pendingBookClaims: claims, waitingForPublisher: waiting });
   }));
 
   router.use(async (req, res, next) => {
@@ -46,6 +56,7 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
     const all = req.query.status === "all";
     const { rows } = await db.query(
       `SELECT r.id, r.status, r.pen_name, r.books, r.message, r.note, r.created_at, r.decided_at,
+              r.publisher_name, r.publisher_email, r.email_sent_at, r.publisher_decision, r.publisher_decided_at,
               r.user_id, a.name, a.email, u.user_type,
               (SELECT count(*)::int FROM author_books ab WHERE ab.user_id = r.user_id) AS linked_count
        FROM author_requests r JOIN users u ON u.id = r.user_id JOIN neon_auth."user" a ON a.id = u.auth_user_id
@@ -58,6 +69,8 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
         id: Number(r.id), status: r.status, penName: r.pen_name, books: r.books, message: r.message, note: r.note,
         createdAt: r.created_at, decidedAt: r.decided_at, name: r.name, email: r.email, userType: r.user_type,
         userId: r.user_id, linkedCount: r.linked_count, // linked already -> the admin page links to the author's page
+        publisherName: r.publisher_name, publisherEmail: r.publisher_email, emailSentAt: r.email_sent_at,
+        publisherDecision: r.publisher_decision, publisherDecidedAt: r.publisher_decided_at,
       })),
     });
   }));
@@ -74,22 +87,47 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
     return t || null;
   };
 
-  router.post("/author-requests/:id/approve", wrap(async (req, res) => {
+  router.post("/author-requests/:id/reject", wrap(async (req, res) => {
     const r = await pendingRequest(checkId(req.params.id));
-    const bookIds = [...new Set((Array.isArray(req.body.bookIds) ? req.body.bookIds : []).map(Number).filter(Number.isInteger))];
-    if (!bookIds.length) throw new BadRequest("choose at least one book");
-    const { rows: found } = await db.query(`SELECT id FROM books WHERE id = ANY($1::int[]);`, [bookIds]);
-    if (found.length !== bookIds.length) throw new BadRequest("unknown book id");
+    await db.query(`UPDATE author_requests SET status = 'rejected', note = $2, decided_at = now() WHERE id = $1;`, [r.id, noteOf(req.body.note)]);
+    res.json({ ok: true });
+  }));
+
+  // ---------- book claims ("this is my book" when the name on the book doesn't match) ----------
+  router.get("/book-claims", wrap(async (req, res) => {
+    const all = req.query.status === "all";
+    const { rows } = await db.query(
+      `SELECT c.id, c.status, c.message, c.note, c.created_at, c.decided_at, c.user_id,
+              b.id AS book_id, b.title, b.authors, b.thumbnail_url, a.name, a.email,
+              coalesce(p.verified_names, '{}') AS verified_names, p.pen_name
+       FROM book_claims c JOIN books b ON b.id = c.book_id
+       JOIN users u ON u.id = c.user_id JOIN neon_auth."user" a ON a.id = u.auth_user_id
+       LEFT JOIN author_profiles p ON p.user_id = c.user_id
+       ${all ? "" : "WHERE c.status = 'pending'"}
+       ORDER BY (c.status = 'pending') DESC, c.created_at DESC LIMIT 200;`
+    );
+    res.json({
+      claims: rows.map((c) => ({
+        id: Number(c.id), status: c.status, message: c.message, note: c.note, createdAt: c.created_at, decidedAt: c.decided_at,
+        userId: c.user_id, name: c.name, email: c.email, penName: c.pen_name, verifiedNames: c.verified_names,
+        book: { id: c.book_id, title: c.title, authors: c.authors, thumbnail_url: c.thumbnail_url },
+      })),
+    });
+  }));
+
+  const pendingClaim = async (id) => {
+    const { rows } = await db.query(`SELECT id, user_id, book_id, status FROM book_claims WHERE id = $1;`, [id]);
+    if (!rows[0]) throw new BadRequest(`no claim #${id}`);
+    if (rows[0].status !== "pending") throw new BadRequest(`claim #${id} is already ${rows[0].status}`);
+    return rows[0];
+  };
+  router.post("/book-claims/:id/approve", wrap(async (req, res) => {
+    const c = await pendingClaim(checkId(req.params.id));
     const client = await db.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`UPDATE users SET user_type = 'author' WHERE id = $1 AND user_type <> 'librarian';`, [r.user_id]);
-      await client.query(`INSERT INTO author_books (user_id, book_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING;`, [r.user_id, bookIds]);
-      await client.query(`UPDATE author_requests SET status = 'approved', note = $2, decided_at = now() WHERE id = $1;`, [r.id, noteOf(req.body.note)]);
-      // the author's page starts with this pen name (the author can change it later; an existing profile is kept)
-      if (await profilesTable(db)) {
-        await client.query(`INSERT INTO author_profiles (user_id, pen_name) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING;`, [r.user_id, r.pen_name]);
-      }
+      await client.query(`INSERT INTO author_books (user_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [c.user_id, c.book_id]);
+      await client.query(`UPDATE book_claims SET status = 'approved', note = $2, decided_at = now() WHERE id = $1;`, [c.id, noteOf(req.body.note)]);
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
@@ -99,10 +137,43 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
     }
     res.json({ ok: true });
   }));
+  router.post("/book-claims/:id/reject", wrap(async (req, res) => {
+    const c = await pendingClaim(checkId(req.params.id));
+    await db.query(`UPDATE book_claims SET status = 'rejected', note = $2, decided_at = now() WHERE id = $1;`, [c.id, noteOf(req.body.note)]);
+    res.json({ ok: true });
+  }));
 
-  router.post("/author-requests/:id/reject", wrap(async (req, res) => {
-    const r = await pendingRequest(checkId(req.params.id));
-    await db.query(`UPDATE author_requests SET status = 'rejected', note = $2, decided_at = now() WHERE id = $1;`, [r.id, noteOf(req.body.note)]);
+  // ---------- books uploaded by authors ----------
+  router.get("/uploads", wrap(async (req, res) => {
+    const { rows } = await db.query(
+      `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.description, up.created_at, up.user_id, a.email,
+              coalesce(p.pen_name, a.name) AS uploader
+       FROM author_uploads up JOIN books b ON b.id = up.book_id
+       JOIN users u ON u.id = up.user_id JOIN neon_auth."user" a ON a.id = u.auth_user_id
+       LEFT JOIN author_profiles p ON p.user_id = up.user_id
+       ORDER BY up.created_at DESC LIMIT 100;`
+    ).catch((err) => (err.code === "42P01" ? { rows: [] } : Promise.reject(err)));
+    res.json({
+      uploads: rows.map((b) => ({
+        id: b.id, title: b.title, authors: b.authors, thumbnail_url: b.thumbnail_url,
+        description: (b.description || "").slice(0, 300), createdAt: b.created_at, userId: b.user_id, uploader: b.uploader, email: b.email,
+      })),
+    });
+  }));
+  // only a book that an author UPLOADED can be removed here (never a catalog book)
+  router.delete("/uploads/:bookId", wrap(async (req, res) => {
+    const bookId = checkId(req.params.bookId);
+    let rowCount;
+    try {
+      ({ rowCount } = await db.query(
+        `DELETE FROM books WHERE id = $1 AND id IN (SELECT book_id FROM author_uploads WHERE book_id = $1);`, [bookId]
+      ));
+    } catch (err) {
+      // another table points at the book without ON DELETE CASCADE - nothing was deleted
+      if (err.code === "23503") return res.status(409).json({ error: `other data still refers to this book (${err.table || "a table"}) - not removed` });
+      throw err;
+    }
+    if (!rowCount) return res.status(404).json({ error: "not an uploaded book" });
     res.json({ ok: true });
   }));
 

@@ -10,6 +10,7 @@
 
 const express = require("express");
 const { authorPage } = require("./author-profiles");
+const { addPeek } = require("./book-peek"); // blurb + overall rating for the hover card
 
 module.exports = function authorRoutes({ db, requireUser, h }) {
   const { wrap, checkId } = h;
@@ -19,7 +20,7 @@ module.exports = function authorRoutes({ db, requireUser, h }) {
   router.get("/:userId", wrap(async (req, res) => {
     const page = await authorPage(db, checkId(req.params.userId));
     if (!page) return res.status(404).json({ error: "author not found" });
-    res.json({ ...page, isMe: page.userId === req.user.id });
+    res.json({ ...page, books: await addPeek(db, page.books), isMe: page.userId === req.user.id });
   }));
 
   return router;

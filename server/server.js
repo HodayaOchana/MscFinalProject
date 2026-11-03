@@ -22,6 +22,8 @@
  *
  * Reviews and discussion (signed-in): /api/social/books/:id ... - see server/social-routes.js
  * Admin (project team, ADMIN_EMAILS in .env): /api/admin/author-requests ... - see server/admin-routes.js
+ * Authors: /api/publisher (the publisher confirms an author - no login), /api/author (claims, new books)
+ *          - see server/author-verification.js
  *
  * Library availability in recommendations - ONLY if the request asks for it:
  *   POST /api/recommendations { ..., nearby: { location: {lat, lng}, radiusKm, mode } }
@@ -53,6 +55,7 @@ const cbf = require(path.join(root, "CBF", "Recommender"));
 const { parseNearby, getAvailability, NearbyError } = require(path.join(root, "library", "availability"));
 const { loadSeries, diversify, hasSeriesColumns } = require(path.join(root, "hybrid", "diversity"));
 const { authorAccountsOfBook } = require("./author-profiles");
+const { addPeek } = require("./book-peek"); // blurb + overall rating for the hover card
 
 const db = hybrid.pool; // reuse the hybrid's connection pool for simple reads
 const PORT = Number(process.env.PORT) || 3001;
@@ -163,7 +166,7 @@ app.get("/api/books/search", wrap(async (req, res) => {
      LIMIT 20;`,
     [q]
   );
-  res.json({ books: rows });
+  res.json({ books: await addPeek(db, rows) });
 }));
 
 app.get("/api/books/:id", wrap(async (req, res) => {
@@ -223,9 +226,9 @@ app.get("/api/books/:id/similar", wrap(async (req, res) => {
   );
   const coverOf = new Map(covers.map((c) => [c.id, c.thumbnail_url]));
   res.json({
-    books: books.map(({ id: bid, title, authors, goodbooks_id, score }) => ({
+    books: await addPeek(db, books.map(({ id: bid, title, authors, goodbooks_id, score }) => ({
       id: bid, title, authors, goodbooks_id, score, thumbnail_url: coverOf.get(bid) || null,
-    })),
+    }))),
     hasMore: offset + count < all.length,
   });
 }));
@@ -253,7 +256,8 @@ app.get("/api/series", wrap(async (req, res) => {
     if (r.number === null) collections.push(r);
     else if (!seen.has(r.number)) { seen.add(r.number); books.push(r); }
   }
-  res.json({ name, author: rows[0].authors?.[0] || null, books, collections });
+  const withPeek = new Map((await addPeek(db, [...books, ...collections])).map((b) => [b.id, b])); // hover card
+  res.json({ name, author: rows[0].authors?.[0] || null, books: books.map((b) => withPeek.get(b.id)), collections: collections.map((b) => withPeek.get(b.id)) });
 }));
 
 app.get("/api/libraries", wrap(async (req, res) => {
@@ -293,12 +297,16 @@ app.use("/api/social", require("./social-routes")({ db, requireUser, h: { BadReq
 // ---------- admin pages (project team only, ADMIN_EMAILS) - server/admin-routes.js ----------
 app.use("/api/admin", require("./admin-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
 app.use("/api/authors", require("./author-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+// authors verified by their publisher; claims and uploads (server/author-verification.js)
+const verification = require("./author-verification");
+app.use("/api/publisher", verification.publisherRoutes({ db, h: { BadRequest, wrap, checkId } }));
+app.use("/api/author", verification.authorRoutes({ db, requireUser, h: { BadRequest, wrap, checkId } }));
 
 // ---------- errors ----------
 app.use((req, res) => res.status(404).json({ error: "no such address" }));
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err instanceof BadRequest || err instanceof NearbyError || err.message?.startsWith("Unknown genre")) {
-    return res.status(400).json({ error: err.message });
+    return res.status(err.status || 400).json({ error: err.message });
   }
   console.error(err);
   res.status(500).json({ error: "server error" });

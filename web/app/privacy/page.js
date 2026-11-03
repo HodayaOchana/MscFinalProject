@@ -23,6 +23,7 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>Account details:</strong> your name, email address and password. Passwords are stored only in hashed form by our login provider; we never see them.</li>
         <li><strong>Your reading profile:</strong> the genres you choose, the books you rate, books you add to your TBR (“to be read”) list, mark as finished or hide (“Not for me”), and your preferred city.</li>
+        <li><strong>Your searches:</strong> what you search for on the Search page and which result you open, shown to you as “Recent searches”. You can remove one or clear them all on the Search page.</li>
         <li><strong>What you post:</strong> reviews you write and your posts and replies in book discussions.</li>
         <li><strong>Author requests</strong> (only if you send one): your pen name, the books you list and your message, so we can check that you are the author.</li>
         <li><strong>Your consent choices:</strong> which version of these documents you agreed to and when, and whether you allowed research use.</li>

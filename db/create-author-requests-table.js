@@ -1,15 +1,15 @@
 /**
  * author_requests - "I am the author of these books" requests from the Account page.
  *
- *   status    pending -> approved | rejected   (decided by the project team with
- *             db/author-requests.js, after checking the person really is the author)
+ *   status    pending -> approved | rejected   (decided by the PUBLISHER through an
+ *             emailed link - see db/create-author-verification.js; the team can reject)
  *   pen_name  the name the author publishes under
  *   books     the books they say they wrote, as they typed them (titles / links)
  *   message   optional note to the team
  *   note      the team's answer, shown to the user (e.g. why it was rejected)
  *
- * At most ONE pending request per user. Approving makes the user an author
- * (users.user_type = 'author') and links the chosen books (author_books).
+ * At most ONE pending request per user. When the publisher confirms, the user
+ * becomes an author (users.user_type = 'author') with a verified pen name.
  * Deleting the user deletes their requests.
  *
  * Only CREATES a new table. Safe to run again.

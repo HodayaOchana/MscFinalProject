@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
+import BookPeek, { hasPeek } from "@/components/BookPeek";
 import BookshelfLoader from "@/components/BookshelfLoader";
 import { api } from "@/lib/api";
 
@@ -40,8 +41,8 @@ export default function AuthorDetails({ id }) {
         <ul className="m-0 grid list-none gap-x-5 gap-y-8 p-0 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
           {author.books.map((b) => (
             <li key={b.id}>
-              <Link href={`/books/${b.id}`} className="flex flex-col gap-2 text-ink no-underline hover:text-rust">
-                <Cover book={b} />
+              <Link href={`/books/${b.id}`} aria-describedby={hasPeek(b) ? `peek-${b.id}` : undefined} className="group relative flex flex-col gap-2 text-ink no-underline hover:z-20 hover:text-rust focus-visible:z-20">
+                <div className="relative"><Cover book={b} /><BookPeek book={b} /></div>
                 <span className="text-sm font-bold leading-snug">{b.title}</span>
                 {year(b.published_date) && <span className="text-[13px] text-muted">{year(b.published_date)}</span>}
               </Link>

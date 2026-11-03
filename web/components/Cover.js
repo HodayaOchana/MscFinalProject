@@ -5,10 +5,19 @@ import { useState } from "react";
 
 const PALETTE = ["#7A3B22", "#3F4A26", "#8C6A2F", "#5B2A1E", "#2F3B33", "#6E4A2A", "#4A3A2E", "#8A4B2A", "#45512B", "#A0612F"];
 
+// the cover's image link (or null) and its background colour - also used by the hover card (BookPeek)
+export function coverLook(book) {
+  return {
+    url: book?.thumbnail_url ? String(book.thumbnail_url).replace(/^http:/, "https:") : null,
+    bg: PALETTE[Math.abs(Number(book?.id) || 0) % PALETTE.length],
+  };
+}
+
 export default function Cover({ book, className = "", small = false }) {
   const [broken, setBroken] = useState(false);
-  const url = book?.thumbnail_url && !broken ? String(book.thumbnail_url).replace(/^http:/, "https:") : null;
-  const bg = PALETTE[Math.abs(Number(book?.id) || 0) % PALETTE.length];
+  const look = coverLook(book);
+  const url = broken ? null : look.url;
+  const bg = look.bg;
   const author = Array.isArray(book?.authors) ? book.authors[0] : book?.authors;
   return (
     <div className={`relative aspect-[2/3] overflow-hidden rounded-md shadow-[0_12px_26px_rgba(43,33,28,0.2)] ${className}`} style={{ background: bg }}>

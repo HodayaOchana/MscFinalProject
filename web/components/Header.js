@@ -17,7 +17,8 @@ const LINKS = [
   { href: "/insights", label: "Insights" },
 ];
 
-// Admins only (the project mail): a bell with the number of author requests waiting.
+// Admins only (the project mail): a bell with the number of book claims waiting for the team
+// (author requests are confirmed by the publisher, not by us).
 // Asked when a page opens, every minute, and right after an approve / reject
 // (the admin page sends the "bb-admin-changed" event). A regular reader is asked once.
 let notAdmin = false;
@@ -32,7 +33,7 @@ function AdminBell({ path }) {
         .then((s) => {
           if (!alive) return;
           if (!s.admin) { notAdmin = true; setPending(null); return; }
-          setPending(s.pendingAuthorRequests);
+          setPending(s.pendingBookClaims ?? 0);
         })
         .catch(() => {}); // the bell is optional - never disturb the page
     };
@@ -42,7 +43,7 @@ function AdminBell({ path }) {
     return () => { alive = false; clearInterval(timer); window.removeEventListener("bb-admin-changed", check); };
   }, [path]);
   if (pending === null) return null;
-  const label = pending ? `${pending} author ${pending === 1 ? "request" : "requests"} waiting for approval` : "No author requests waiting";
+  const label = pending ? `${pending} book ${pending === 1 ? "claim" : "claims"} waiting for you` : "Nothing waiting for the team";
   return (
     <Link href="/admin/author-requests" aria-label={label} title={label}
       className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink no-underline hover:bg-cream hover:text-rust">

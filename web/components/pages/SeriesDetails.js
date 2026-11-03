@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
+import BookPeek, { hasPeek } from "@/components/BookPeek";
 import { api } from "@/lib/api";
 
 const num = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
@@ -48,7 +49,7 @@ export default function SeriesDetails({ name }) {
         <ol className="m-0 grid list-none gap-x-5 gap-y-8 p-0 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
           {series.books.map((b) => (
             <li key={b.id}>
-              <Link href={`/books/${b.id}`} className="flex flex-col gap-2 text-ink no-underline hover:text-rust">
+              <Link href={`/books/${b.id}`} aria-describedby={hasPeek(b) ? `peek-${b.id}` : undefined} className="group relative flex flex-col gap-2 text-ink no-underline hover:z-20 hover:text-rust focus-visible:z-20">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted">Book {num(b.number)}</span>
                 <div className="relative">
                   <Cover book={b} className={mine.has(b.id) ? "opacity-80" : ""} />
@@ -58,6 +59,7 @@ export default function SeriesDetails({ name }) {
                       <span aria-hidden="true">★</span> {mine.get(b.id)}<span className="sr-only"> stars, you rated it</span>
                     </span>
                   )}
+                  <BookPeek book={b} />
                 </div>
                 <span className="text-sm font-bold leading-snug">{b.title}</span>
                 {year(b.published_date) && <span className="text-[13px] text-muted">{year(b.published_date)}</span>}
@@ -71,8 +73,8 @@ export default function SeriesDetails({ name }) {
             <h2 id="collections" className="m-0 font-serif text-[30px] font-semibold">Box sets &amp; collections</h2>
             <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(130px,1fr))]">
               {series.collections.map((b) => (
-                <Link key={b.id} href={`/books/${b.id}`} className="flex flex-col gap-2 text-ink no-underline hover:text-rust">
-                  <Cover book={b} small />
+                <Link key={b.id} href={`/books/${b.id}`} aria-describedby={hasPeek(b) ? `peek-${b.id}` : undefined} className="group relative flex flex-col gap-2 text-ink no-underline hover:z-20 hover:text-rust focus-visible:z-20">
+                  <div className="relative"><Cover book={b} small /><BookPeek book={b} variant="pop" /></div>
                   <span className="text-[13px] font-bold leading-snug">{b.title}</span>
                 </Link>
               ))}

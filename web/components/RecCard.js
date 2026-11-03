@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Cover from "./Cover";
 import Stars from "./Stars";
+import BookPeek, { hasPeek } from "./BookPeek";
 import { BookmarkIcon, StarIcon, XIcon, PinIcon } from "./Icons";
 import { api } from "@/lib/api";
 
@@ -39,9 +40,10 @@ export default function RecCard({ book, showAvailability, onDismiss, onRated }) 
 
   return (
     <article className="flex flex-col gap-2.5">
-      <Link href={`/books/${book.id}`} className="relative block no-underline">
+      <Link href={`/books/${book.id}`} className="group relative block no-underline" aria-describedby={hasPeek(book) ? `peek-${book.id}` : undefined}>
         <Cover book={book} />
         {book.isNew && <span className="absolute right-2.5 top-2.5 rounded-full bg-parchment px-2 py-1 text-[11px] font-bold text-moss">NEW</span>}
+        <BookPeek book={book} />
       </Link>
       <div className="flex flex-col gap-1">
         <Link href={`/books/${book.id}`} className="font-bold leading-snug text-ink no-underline hover:text-rust">{book.title}</Link>

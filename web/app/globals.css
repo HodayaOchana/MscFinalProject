@@ -87,8 +87,8 @@ a:hover { color: var(--color-rust-dark); }
   100% { opacity: 0; transform: translateY(0); }
 }
 /* A card that just took another card's place */
-.fresh-in { animation: fresh-in .6s ease both; }
-@keyframes fresh-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.fresh-in { animation: fresh-in .9s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes fresh-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .toast { animation: toast-fade 3.5s linear forwards; }
   @keyframes toast-fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
@@ -108,3 +108,7 @@ a:hover { color: var(--color-rust-dark); }
 :root { --chart-1: #A24B25; --chart-2: #3060A8; --chart-grid: #E6D9C6; }
 .bar-tip { pointer-events: none; opacity: 0; transition: opacity .12s; }
 .bar-hit:hover .bar-tip, .bar-hit:focus-visible .bar-tip { opacity: 1; }
+
+/* For You shelves: sideways rows without a visible scrollbar (arrows / swipe instead) */
+.shelf-scroll { scrollbar-width: none; }
+.shelf-scroll::-webkit-scrollbar { display: none; }
