@@ -133,3 +133,40 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
   if (!res.ok) throw new Error(json?.error || `API error ${res.status}`);
   return json;
 }
+
+// The same, read as server-sent events: the chat's answer while it is being written
+// (server/chat.js). onEvent(event, data) for each event; resolves when the stream ends.
+export async function apiStream(path, { body, onEvent }) {
+  const send = async (force) => {
+    const token = await getToken(force);
+    if (!token) throw await noTokenError("Neon Auth gave no token (see the [auth] lines above)");
+    return fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+  };
+  let res = await send(false);
+  if (res.status === 401) res = await send(true); // token expired meanwhile: once more, fresh
+  if (res.status === 401) throw await noTokenError("the API refused the token - see the server window");
+  if (!res.ok || !res.body) {
+    const json = await res.json().catch(() => null);
+    throw new Error(json?.error || `API error ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      const event = chunk.match(/^event: (.*)$/m)?.[1];
+      const data = chunk.match(/^data: (.*)$/m)?.[1];
+      if (event) onEvent(event, data ? JSON.parse(data) : {});
+    }
+  }
+}

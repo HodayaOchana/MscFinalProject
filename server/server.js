@@ -21,6 +21,8 @@
  *   GET/POST /api/me/ratings, DELETE /api/me/ratings/:bookId, POST /api/me/events,
  *   GET /api/me/recommendations   (recommendations from the SAVED ratings and genres)
  *
+ * Chatbot (signed-in): POST /api/chat { message, conversationId? } - see server/chat.js
+ * Chatbot evaluation (raters, ADMIN_EMAILS + RATER_EMAILS): /api/chat-eval/... - see server/chat-eval-routes.js
  * Reviews and discussion (signed-in): /api/social/books/:id ... - see server/social-routes.js
  * Admin (project team, ADMIN_EMAILS in .env): /api/admin/author-requests ... - see server/admin-routes.js
  * Authors: /api/publisher (the publisher confirms an author - no login), /api/author (claims, new books)
@@ -337,6 +339,11 @@ app.use("/api/me", meRoutes({
   db, hybrid, requireUser,
   h: { BadRequest, wrap, checkGenres, checkRatings, checkId, withTexts, nearbyFromQuery, parseNearby },
 }));
+
+// ---------- "Ask BookBridge" chatbot - AI model 2 (server/chat.js) ----------
+const recommendFor = meRoutes.makeRecommendFor({ db, hybrid, withTexts });
+app.use("/api/chat", require("./chat")({ db, requireUser, recommendFor, h: { wrap } }));
+app.use("/api/chat-eval", require("./chat-eval-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
 
 // ---------- reviews and discussion around a book (server/social-routes.js) ----------
 app.use("/api/social", require("./social-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));

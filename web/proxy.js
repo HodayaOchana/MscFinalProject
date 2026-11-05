@@ -38,6 +38,7 @@ export const config = {
     "/search/:path*",
     "/shelf/:path*",
     "/chat/:path*",
+    "/evaluate/:path*",
     "/insights/:path*",
   ],
 };

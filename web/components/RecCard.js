@@ -6,7 +6,7 @@ import Link from "next/link";
 import Cover from "./Cover";
 import Stars from "./Stars";
 import BookPeek, { hasPeek } from "./BookPeek";
-import { BookmarkIcon, StarIcon, XIcon, PinIcon } from "./Icons";
+import { BookmarkIcon, StarIcon, XIcon, PinIcon, ChatIcon } from "./Icons";
 import { api } from "@/lib/api";
 
 const REASON_STYLE = {
@@ -16,7 +16,9 @@ const REASON_STYLE = {
 };
 const reasonKind = (r = "") => (r.includes("(CF)") ? "cf" : r.includes("(CBF)") ? "cbf" : "pop");
 
-export default function RecCard({ book, showAvailability, onDismiss, onRated }) {
+// onAsk: what "Ask about this book" does - by default it opens the chat about this book
+// (/chat?book=<id>&ask=1); the chat itself passes its own (ask in the same conversation)
+export default function RecCard({ book, showAvailability, onDismiss, onRated, onAsk }) {
   const [saved, setSaved] = useState(false);
   const [rating, setRating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -55,10 +57,13 @@ export default function RecCard({ book, showAvailability, onDismiss, onRated }) 
           </Link>
         )}
       </div>
-      <span className={`self-start rounded-full px-2.5 py-1 text-xs ${REASON_STYLE[reasonKind(book.reason)]}`}>{book.reasonText || book.reason}</span>
+      {book.match > 0 && (
+        <span className="text-[13px] font-bold text-moss" title="How well this book fits you, compared with your best pick here">{book.match}% match</span>
+      )}
+      <span dir="auto" className={`self-start rounded-xl px-2.5 py-1 text-xs leading-snug ${REASON_STYLE[reasonKind(book.reason)]}`}>{book.reasonText || book.reason}</span>
       {showAvailability && (
         <span className={`flex items-start gap-1.5 text-[13px] ${book.availability ? "text-moss-dark" : "text-muted"}`}>
-          <span className="mt-0.5"><PinIcon /></span>{book.availabilityText}
+          <span className="mt-0.5"><PinIcon /></span><span dir="auto">{book.availabilityText}</span>
         </span>
       )}
       {rating ? (
@@ -68,6 +73,11 @@ export default function RecCard({ book, showAvailability, onDismiss, onRated }) 
           <button type="button" disabled={busy} onClick={save} aria-pressed={saved} aria-label={saved ? "Remove from my TBR" : "Add to my TBR (to be read)"} data-tip={saved ? "Remove from my TBR" : "Add to my TBR"} className={`icon-btn ${saved ? "text-rust" : "text-ink"}`}><BookmarkIcon filled={saved} /></button>
           <button type="button" disabled={busy} onClick={() => setRating(true)} aria-label="Rate this book" data-tip="I read it – rate it" className="icon-btn text-ink"><StarIcon /></button>
           <button type="button" onClick={dismiss} aria-label="Not for me" data-tip="Not for me – hide it" className="icon-btn text-ink"><XIcon /></button>
+          {onAsk ? (
+            <button type="button" onClick={() => onAsk(book)} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask about this book" className="icon-btn text-ink"><ChatIcon /></button>
+          ) : (
+            <Link href={`/chat?book=${book.id}&ask=1`} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask about this book" className="icon-btn text-ink no-underline"><ChatIcon /></Link>
+          )}
         </div>
       )}
     </article>

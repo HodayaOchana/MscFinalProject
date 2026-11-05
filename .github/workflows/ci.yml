@@ -1,0 +1,37 @@
+# Checks on every push and pull request (proposal, section 7.2: code quality).
+#   server - the unit tests in test/ (npm test): no database and no API key needed
+#   web    - ESLint on the Next.js site
+# The tests that need the database or the Claude API (server/test-*.js, server/eval-chat.js)
+# are run by hand - they need the secrets in .env.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npm run lint

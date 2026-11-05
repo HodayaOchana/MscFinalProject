@@ -46,48 +46,18 @@ const { authorPage, knownPenName, profilesTable, cleanWebsite } = require("./aut
 const { CONSENT_VERSIONS, REQUIRED, SOURCES, BODY_KEYS, currentConsents, consentNeeded } = require("./consents");
 const path = require("path");
 const { getOnboardingBooks } = require(path.join(__dirname, "..", "onboarding", "onboarding"));
-const { SIGNALS, searchSignals } = require(path.join(__dirname, "..", "CF", "signal-weights")); // what each action counts
+const { SIGNALS, searchSignals, chatAskSignal } = require(path.join(__dirname, "..", "CF", "signal-weights")); // what each action counts
+const { addMatch } = require("./match"); // "92% match" on the cards
+const { explainRecommendations } = require("./explain"); // "Readers who loved Harry Potter also loved this"
 const { GENRES } = require(path.join(__dirname, "..", "onboarding", "genres"));
 const GENRE_LABEL = new Map(GENRES.map((g) => [g.key, g.label]));
 
 const EVENT_TYPES = new Set(["saved", "unsaved", "started", "finished", "dismissed", "clicked"]);
 const CITIES = new Set(["Jerusalem", "Tel Aviv-Yafo"]);
 
-module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
-  const { BadRequest, wrap, checkGenres, checkRatings, checkId, withTexts, nearbyFromQuery, parseNearby } = h;
-  const router = express.Router();
-  router.use(requireUser(db));
-
-  // all book ids exist? (a clear 400 instead of a database error)
-  async function checkBooksExist(ids) {
-    if (!ids.length) return;
-    const { rows } = await db.query(`SELECT id FROM books WHERE id = ANY($1::int[]);`, [ids]);
-    const found = new Set(rows.map((r) => r.id));
-    const missing = ids.filter((id) => !found.has(id));
-    if (missing.length) throw new BadRequest(`unknown book ids: ${missing.slice(0, 10).join(", ")}`);
-  }
-
-  async function saveRatings(client, userId, ratings, source) {
-    if (!ratings.length) return;
-    await client.query(
-      `INSERT INTO user_ratings (user_id, book_id, rating, source)
-       SELECT $1, b, r, $4 FROM unnest($2::int[], $3::smallint[]) AS t(b, r)
-       ON CONFLICT (user_id, book_id) DO UPDATE SET rating = EXCLUDED.rating, updated_at = now();`,
-      [userId, ratings.map((r) => r.bookId), ratings.map((r) => r.rating), source]
-    );
-  }
-
-  async function saveGenres(client, userId, genres) {
-    await client.query(`DELETE FROM user_genres WHERE user_id = $1;`, [userId]);
-    if (genres.length) {
-      await client.query(
-        `INSERT INTO user_genres (user_id, genre_key) SELECT $1, unnest($2::text[]);`,
-        [userId, genres]
-      );
-    }
-  }
-
-  async function recommendFor(userId, count, nearby, exclude = [], extra = {}) {
+// The user's recommendations from the saved ratings + genres (also used by the chatbot, server/chat.js)
+function makeRecommendFor({ db, hybrid, withTexts }) {
+  return async function recommendFor(userId, count, nearby, exclude = [], extra = {}) {
     const [{ rows: ratings }, { rows: genres }, { rows: dismissed }] = await Promise.all([
       db.query(`SELECT book_id, rating FROM user_ratings WHERE user_id = $1;`, [userId]),
       db.query(`SELECT genre_key FROM user_genres WHERE user_id = $1;`, [userId]),
@@ -124,10 +94,15 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     ).catch(() => ({ rows: [] })); // no search table yet (db/create-search-table.js)
     const { rows: nfm } = await db.query(`SELECT DISTINCT book_id FROM user_events WHERE user_id = $1 AND type = 'dismissed';`, [userId]);
     const notForMe = new Set(nfm.map((r) => r.book_id));
-    for (const row of searches) {
-      for (const sig of searchSignals(row)) {
-        if (!notForMe.has(sig.bookId) && !(signal.get(sig.bookId) >= sig.value)) signal.set(sig.bookId, sig.value);
-      }
+    // "Ask about this book" in the chatbot (server/chat.js)
+    const { rows: asked } = await db.query(
+      `SELECT t.about_book_id AS book_id, count(*)::int AS times
+       FROM chat_turns t JOIN chat_conversations c ON c.id = t.conversation_id
+       WHERE c.user_id = $1 AND t.about_book_id IS NOT NULL GROUP BY 1;`, [userId]
+    ).catch(() => ({ rows: [] })); // no chat tables yet (db/create-chat-tables.js)
+    const chatSignals = asked.map((r) => ({ bookId: r.book_id, value: chatAskSignal(r.times) }));
+    for (const sig of [...searches.flatMap(searchSignals), ...chatSignals]) {
+      if (!notForMe.has(sig.bookId) && !(signal.get(sig.bookId) >= sig.value)) signal.set(sig.bookId, sig.value);
     }
     const result = await hybrid.getHybridRecommendations(
       ratings.map((r) => ({ bookId: r.book_id, rating: r.rating })),
@@ -135,8 +110,47 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
       { genres: genres.map((g) => g.genre_key), nearby, diversify: true, exclude,
         signals: [...signal].map(([bookId, value]) => ({ bookId, value })), ...extra }
     );
-    return { ...result, recommendations: result.recommendations.map(withTexts) };
+    const genreKeys = genres.map((g) => g.genre_key);
+    const recommendations = await explainRecommendations(db, userId, addMatch(result.recommendations).map(withTexts), genreKeys);
+    return { ...result, recommendations };
+  };
+}
+
+module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
+  const { BadRequest, wrap, checkGenres, checkRatings, checkId, withTexts, nearbyFromQuery, parseNearby } = h;
+  const router = express.Router();
+  router.use(requireUser(db));
+
+  // all book ids exist? (a clear 400 instead of a database error)
+  async function checkBooksExist(ids) {
+    if (!ids.length) return;
+    const { rows } = await db.query(`SELECT id FROM books WHERE id = ANY($1::int[]);`, [ids]);
+    const found = new Set(rows.map((r) => r.id));
+    const missing = ids.filter((id) => !found.has(id));
+    if (missing.length) throw new BadRequest(`unknown book ids: ${missing.slice(0, 10).join(", ")}`);
   }
+
+  async function saveRatings(client, userId, ratings, source) {
+    if (!ratings.length) return;
+    await client.query(
+      `INSERT INTO user_ratings (user_id, book_id, rating, source)
+       SELECT $1, b, r, $4 FROM unnest($2::int[], $3::smallint[]) AS t(b, r)
+       ON CONFLICT (user_id, book_id) DO UPDATE SET rating = EXCLUDED.rating, updated_at = now();`,
+      [userId, ratings.map((r) => r.bookId), ratings.map((r) => r.rating), source]
+    );
+  }
+
+  async function saveGenres(client, userId, genres) {
+    await client.query(`DELETE FROM user_genres WHERE user_id = $1;`, [userId]);
+    if (genres.length) {
+      await client.query(
+        `INSERT INTO user_genres (user_id, genre_key) SELECT $1, unnest($2::text[]);`,
+        [userId, genres]
+      );
+    }
+  }
+
+  const recommendFor = makeRecommendFor({ db, hybrid, withTexts });
 
   // ---------- consents (Terms, Privacy Policy, age 16+, optional research use) ----------
   router.get("/consents", wrap(async (req, res) => {
@@ -516,3 +530,5 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
 
   return router;
 };
+
+module.exports.makeRecommendFor = makeRecommendFor;

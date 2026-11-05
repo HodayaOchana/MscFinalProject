@@ -94,4 +94,4 @@ async function saveNeighbours(client, db, bookId) {
   return keep.length;
 }
 
-module.exports = { embedBook, embeddingText, saveNeighbours, toVector, DIM, MODEL, resetForTests: () => { meanPromise = null; } };
+module.exports = { embedBook, embeddingText, saveNeighbours, toVector, extractor, DIM, MODEL, resetForTests: () => { meanPromise = null; } };

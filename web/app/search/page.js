@@ -13,7 +13,7 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
 import BookPeek from "@/components/BookPeek";
-import { SearchIcon, XIcon } from "@/components/Icons";
+import { SearchIcon, XIcon, ChatIcon } from "@/components/Icons";
 import { api } from "@/lib/api";
 
 const ClockIcon = () => (
@@ -208,6 +208,8 @@ export default function SearchPage() {
                 <span className="text-sm text-muted">{(b.authors || []).join(", ")}</span>
                 {b.match === "tag" && <span className="self-start rounded-full bg-rust-soft px-2.5 py-0.5 text-xs text-rust-dark">#{b.tag} · {fmt(b.tag_count)} readers</span>}
               </div>
+              {/* ask the chatbot: is it for me, what is similar, where to borrow it */}
+              <Link href={`/chat?book=${b.id}&ask=1`} aria-label={`Ask BookBridge about ${b.title}`} className="flex items-center gap-1.5 rounded-full border border-line-strong px-4 py-2.5 text-sm text-ink no-underline hover:border-ink"><ChatIcon />Ask</Link>
               <Link href={`/books/${b.id}`} className="rounded-full border border-line-strong px-4 py-2.5 text-sm text-ink no-underline hover:border-ink">View</Link>
               {/* on hover the row grows into a floating card: bigger cover, rating, blurb */}
               <BookPeek book={b} variant="row">
@@ -217,6 +219,7 @@ export default function SearchPage() {
                     <span className="font-serif text-xl font-semibold leading-tight">{b.title}</span>
                     <span className="text-sm text-muted">{(b.authors || []).join(", ")}</span>
                   </div>
+                  <Link href={`/chat?book=${b.id}&ask=1`} tabIndex={-1} className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-4 py-2.5 text-sm text-ink no-underline hover:border-ink"><ChatIcon />Ask BookBridge</Link>
                   <span className="rounded-full bg-ink px-4 py-2.5 text-sm text-parchment">View</span>
                 </div>
               </BookPeek>

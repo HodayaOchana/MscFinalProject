@@ -7,6 +7,8 @@
 //                     (shelves, the "Similar in spirit" grid)
 //   variant="pop"   - for small covers: a fixed-size card centred over the cover
 //   variant="row"   - the whole search-result row grows into a bigger floating card
+//                     (a click anywhere opens the book; an element in `children` with
+//                     the class pointer-events-auto - a button - stays clickable)
 // It appears after a short pause (so sweeping across a shelf doesn't flash every
 // book), also on keyboard focus; never on touch screens (no hover there).
 
@@ -50,14 +52,17 @@ export default function BookPeek({ book, variant = "cover", children }) {
     // a bigger copy of the row, floating over it (the row itself stays for screen
     // readers and keyboard, so this copy is hidden from them)
     return (
-      <Link href={`/books/${book.id}`} aria-hidden="true" tabIndex={-1}
-        className={`${SHOW} absolute -inset-x-3 -top-3 z-30 flex origin-top flex-col gap-3 rounded-2xl border border-white/60 bg-[rgba(255,251,244,0.95)] p-4 text-ink no-underline shadow-[0_22px_48px_rgba(43,33,28,0.28)] backdrop-blur-xl backdrop-saturate-150 hover:text-ink`}>
-        {children}
-        <div className="flex flex-col gap-1.5">
-          <PeekRating book={book} />
-          {book.blurb && <p className="m-0 line-clamp-4 text-sm leading-relaxed text-[#3D3029]">{book.blurb}</p>}
+      <div aria-hidden="true"
+        className={`${SHOW} absolute -inset-x-3 -top-3 z-30 flex origin-top flex-col gap-3 rounded-2xl border border-white/60 bg-[rgba(255,251,244,0.95)] p-4 text-ink shadow-[0_22px_48px_rgba(43,33,28,0.28)] backdrop-blur-xl backdrop-saturate-150`}>
+        <Link href={`/books/${book.id}`} tabIndex={-1} className="absolute inset-0 rounded-2xl" />
+        <div className="pointer-events-none relative flex flex-col gap-3">
+          {children}
+          <div className="flex flex-col gap-1.5">
+            <PeekRating book={book} />
+            {book.blurb && <p className="m-0 line-clamp-4 text-sm leading-relaxed text-[#3D3029]">{book.blurb}</p>}
+          </div>
         </div>
-      </Link>
+      </div>
     );
   }
 

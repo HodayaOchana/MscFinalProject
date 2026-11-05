@@ -146,7 +146,7 @@ export default function BookDetails({ id }) {
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={() => event("saved", "Added to your TBR – find it on My shelf.")} className="btn btn-primary">Add to TBR</button>
               <button type="button" onClick={() => event("finished", "Marked as finished – rate it to improve your picks.")} className="btn btn-outline">I finished it</button>
-              <Link href="/chat" className="btn border border-line-strong font-medium text-ink">Ask about this book</Link>
+              <Link href={`/chat?book=${book.id}&ask=1`} className="btn border border-line-strong font-medium text-ink">Ask about this book</Link>
             </div>
             {msg && <p role="status" className="m-0 text-sm text-moss-dark">{msg}</p>}
           </div>

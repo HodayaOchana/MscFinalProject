@@ -48,7 +48,7 @@ const readline = require("readline");
 const { Pool } = require("pg");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { DEFAULTS, trainALS, gram, toVectorLiteral } = require(path.join(__dirname, "als"));
-const { SIGNALS, searchSignals } = require(path.join(__dirname, "signal-weights"));
+const { SIGNALS, searchSignals, chatAskSignal } = require(path.join(__dirname, "signal-weights"));
 const { trainEASE, easeScores } = require(path.join(__dirname, "ease"));
 // EASE (CF/ease.js) - the main CF part of the site since 03/11/2026: CF = 0.85 EASE + 0.15 ALS
 // (hybrid/evaluate.js, test set: 29.50% -> 35.22%). --no-ease trains ALS only.
@@ -139,6 +139,15 @@ async function platformRows() {
     const { rows: searches } = await pool.query(
       `SELECT user_id, clicked_book_id, search_count${hasTop ? ", result_book_ids" : ""} FROM user_searches;`);
     for (const row of searches) for (const sig of searchSignals(row)) put(row.user_id, sig.bookId, sig.value, sig.value >= SIGNALS.searchClick);
+  }
+  const hasAsk = (await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'chat_turns' AND column_name = 'about_book_id';`)).rowCount > 0;
+  if (hasAsk) {
+    // "Ask about this book" in the chatbot: interest, not a choice - weak for EASE (CF/signal-weights.js)
+    const { rows: asked } = await pool.query(
+      `SELECT c.user_id, t.about_book_id AS book_id, count(*)::int AS times
+       FROM chat_turns t JOIN chat_conversations c ON c.id = t.conversation_id
+       WHERE t.about_book_id IS NOT NULL GROUP BY 1, 2;`);
+    for (const a of asked) put(a.user_id, a.book_id, chatAskSignal(a.times));
   }
   const out = [];
   for (const [k, v] of value) {

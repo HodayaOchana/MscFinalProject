@@ -27,8 +27,8 @@ export default function PrivacyPage() {
         <li><strong>What you post:</strong> reviews you write and your posts and replies in book discussions.</li>
         <li><strong>Author requests</strong> (only if you send one): your pen name, the books you list and your message, so we can check that you are the author.</li>
         <li><strong>Your consent choices:</strong> which version of these documents you agreed to and when, and whether you allowed research use.</li>
-        <li><strong>Location – only when you ask for it:</strong> if you choose “Near my location”, your browser sends your approximate coordinates to find libraries within 10 km. They are used for that request only and are <strong>not stored</strong>.</li>
-        <li><strong>Questions to the assistant</strong> (“Ask {SITE.name}”, when available): the messages you write, so the assistant can answer them.</li>
+        <li><strong>Location – only when you ask for it:</strong> if you choose “Near my location”, or “Use my location” in the chat, your browser sends your approximate coordinates to find libraries nearby. They are used for that request only and are <strong>not stored</strong>.</li>
+        <li><strong>Questions to the assistant</strong> (“Ask {SITE.name}”): the messages you write and its answers, kept in your chat history until you delete them.</li>
       </ul>
       <p>We do not collect payment details, and we do not use advertising or analytics trackers.</p>
 
@@ -60,8 +60,9 @@ export default function PrivacyPage() {
 
       <h2>6. Cookies and browser storage</h2>
       <p>
-        We use only what the site needs to work: a login cookie that keeps you signed in, and temporary browser storage
-        for things like the genres you picked during sign-up. No advertising or tracking cookies.
+        We use only what the site needs to work: a login cookie that keeps you signed in, and browser storage for things
+        like the genres you picked during sign-up and whether “Use my location” is on in the chat. No advertising or
+        tracking cookies.
       </p>
 
       <h2>7. How long we keep it</h2>

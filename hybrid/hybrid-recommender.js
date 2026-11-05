@@ -76,6 +76,9 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
+// An idle connection that the database closes (Neon after a while, or the computer
+// slept) must not crash the server: the pool drops it and opens a new one when needed.
+pool.on("error", (err) => console.warn(`(database connection closed: ${err.message} - ignored)`));
 
 const BETA = 5;                 // CF weight w = n / (n + BETA)
 const NEW_BOOK_SLOTS = 2;       // places reserved for books without ratings
