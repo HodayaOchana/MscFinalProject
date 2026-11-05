@@ -1,7 +1,7 @@
 // The chatbot's answer tidying (server/chat-text.js). Run: npm test
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { tidyTitles, takeFollowUps, ground, suggestedIn, OTHER_SCRIPT } = require("../server/chat-text");
+const { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, OTHER_SCRIPT } = require("../server/chat-text");
 
 test("ground keeps books the tools returned and drops the others", () => {
   const seen = new Map([[1, { why: "fits" }], [3, {}]]);
@@ -54,4 +54,17 @@ test("OTHER_SCRIPT finds non-Latin messages", () => {
   assert.ok(OTHER_SCRIPT.test("книга"));
   assert.ok(OTHER_SCRIPT.test("كتاب"));
   assert.ok(!OTHER_SCRIPT.test("A café book, naïve and fun – 300 pages!"));
+});
+
+test("reasonsIn takes what the answer said about each listed book", () => {
+  const r = reasonsIn("Here you go:\n- [[book:1]] – 273 pages. A kidnapped girl fights back. It is tense.\n1. **[[book:2]]** (180 pages). Quiet and strange!\nAlso [[book:3]] is nice.\n- [[book:4]]");
+  assert.equal(r.get(1), "A kidnapped girl fights back.");
+  assert.equal(r.get(2), "Quiet and strange!");
+  assert.equal(r.has(3), false); // not a list line
+  assert.equal(r.has(4), false); // nothing said about it
+});
+
+test("reasonsIn keeps a reason short", () => {
+  const r = reasonsIn(`- [[book:1]] – ${"word ".repeat(40)}`);
+  assert.ok(r.get(1).length <= 90 && r.get(1).endsWith("…"));
 });

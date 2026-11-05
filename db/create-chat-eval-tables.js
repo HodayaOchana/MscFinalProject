@@ -4,7 +4,7 @@
  *
  *   chat_eval_dialogues - the sample dialogues raters see (made by server/eval-dialogues.js)
  *     model          the model that answered (claude-sonnet-5-5 / claude-haiku-5-5)
- *     kind           what the dialogue tests: discover | refine | about-book | near-me | small-talk | edge
+ *     kind           what the dialogue tests: discover | refine | about-book | near-me | acts | small-talk | edge
  *     turns          [{ message, reply, books: [{ id, title }] }] - what the reader wrote and the answers
  *
  *   chat_eval_ratings - one score per rater and dialogue

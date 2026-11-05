@@ -9,6 +9,7 @@
  *   ground(text, seen)             keeps only [[book:ID]] markers of books the tools returned
  *                                  (seen: Map id -> info) - the "no hallucinated books" check
  *   suggestedIn(messages)          the ids of the books earlier answers suggested
+ *   reasonsIn(reply)               why each listed book fits, from its bullet: id -> one short sentence
  *   OTHER_SCRIPT                   a message not in Latin letters (Hebrew, Arabic, Cyrillic...)
  *
  * Pure functions - tested in test/chat-text.test.js.
@@ -75,7 +76,23 @@ const suggestedIn = (messages) => new Set(messages
   .filter((m) => m.role === "assistant" && Array.isArray(m.content))
   .flatMap((m) => m.content.filter((b) => b.type === "text").flatMap((b) => [...b.text.matchAll(BOOK_MARKER)].map((x) => Number(x[1])))));
 
+// "- [[book:9]] – 328 pages. A chilling look at surveillance." -> 9: "A chilling look at surveillance."
+// The reason a book's card shows: what the answer itself said about it.
+const MAX_REASON = 90;
+function reasonsIn(reply) {
+  const reasons = new Map();
+  for (const m of reply.matchAll(/^\s*(?:[-*•]|\d+[.)])\s+\**\[\[book:(\d+)\]\]\**\s*[–—:-]?\s*(.*)$/gm)) {
+    const text = m[2]
+      .replace(/\[\[book:\d+\]\]/g, "the book").replace(/\*+/g, "")
+      .replace(/^\(?\d[\d,]*\s*(?:pages|pp)\.?\)?[.,:;–—-]?\s*/i, "").trim();
+    const sentence = (text.match(/^.*?[.!?](?=\s|$)/) || [text])[0].trim();
+    if (!sentence || reasons.has(Number(m[1]))) continue;
+    reasons.set(Number(m[1]), sentence.length <= MAX_REASON ? sentence : `${sentence.slice(0, MAX_REASON - 1).replace(/\s+\S*$/, "")}…`);
+  }
+  return reasons;
+}
+
 // Hebrew, Arabic, Cyrillic, Greek, CJK... - a message the bot should still answer in English
 const OTHER_SCRIPT = /[\u0370-\u03ff\u0400-\u04ff\u0590-\u05ff\u0600-\u06ff\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]/;
 
-module.exports = { tidyTitles, takeFollowUps, ground, suggestedIn, OTHER_SCRIPT, BOOK_MARKER };
+module.exports = { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, OTHER_SCRIPT, BOOK_MARKER };

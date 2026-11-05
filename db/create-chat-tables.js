@@ -28,9 +28,15 @@
  *     lang                     the reply's language (always "en" now)
  *     about_book_id            the book the reader pressed "Ask about this book" on - a signal
  *                              for the recommendation engine (CF/signal-weights.js, chatAsk)
+ *     offered_book_id          the book the reader was asked to rate under this answer ("How was
+ *                              Dune?") - so a book is offered once, and the offers stay few
+ *
+ *   chat_reader_notes - what the chatbot remembers between conversations: reading
+ *                preferences the reader stated ("hates horror"). Shown on the chat
+ *                page, where the reader can delete them (server/chat.js).
  *
  * Deleting a conversation deletes its messages and turns; deleting the account
- * deletes the conversations (ON DELETE CASCADE).
+ * deletes the conversations and the notes (ON DELETE CASCADE).
  *
  * Safe to run again. Does not touch any other table.
  *
@@ -84,7 +90,15 @@ CREATE TABLE IF NOT EXISTS chat_turns (
 ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS places jsonb;
 ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS lang text;  -- the reply's language
 ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS about_book_id int REFERENCES books(id) ON DELETE SET NULL;
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS offered_book_id int REFERENCES books(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS chat_turns_about_book ON chat_turns (about_book_id) WHERE about_book_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS chat_reader_notes (
+  id          serial PRIMARY KEY,
+  user_id     int  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  note        text NOT NULL CHECK (length(note) <= 200),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_reader_notes_user ON chat_reader_notes (user_id, created_at);
 ALTER TABLE chat_messages DROP CONSTRAINT IF EXISTS chat_messages_role_check;
 ALTER TABLE chat_messages ADD CONSTRAINT chat_messages_role_check CHECK (role IN ('user', 'assistant', 'system'));
 `;

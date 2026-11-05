@@ -75,6 +75,12 @@ const { loadSeries, seriesRepresentative, titleKey } = require(path.join(__dirna
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  // a connection can hang silently: a plain SELECT 1 was measured waiting 124 s until the operating
+  // system gave up (ETIMEDOUT). So: notice sooner, and fail a stuck query instead of waiting for minutes
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
+  connectionTimeoutMillis: 10000,
+  query_timeout: 30000,
 });
 // An idle connection that the database closes (Neon after a while, or the computer
 // slept) must not crash the server: the pool drops it and opens a new one when needed.

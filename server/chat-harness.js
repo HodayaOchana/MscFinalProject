@@ -24,6 +24,10 @@ async function startChat() {
   const { rows: [user] } = await db.query(
     `SELECT id, preferred_city FROM users WHERE id = (SELECT user_id FROM user_ratings GROUP BY 1 ORDER BY count(*) DESC LIMIT 1);`
   );
+  // a saved note goes into every new conversation - a run stopped halfway once left one, and it
+  // changed the answers of the next runs without anyone seeing. So: clean reader, or no run.
+  const { rows: notes } = await db.query(`SELECT id, note FROM chat_reader_notes WHERE user_id = $1;`, [user.id]).catch(() => ({ rows: [] }));
+  if (notes.length) throw new Error(`reader ${user.id} has saved notes, which would change the answers: ${JSON.stringify(notes)}. Delete them first.`);
   const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
   const recommendFor = meRoutes.makeRecommendFor({ db, hybrid, withTexts: (r) => ({ ...r, reasonText: r.reason }) });
   const app = express();
@@ -35,7 +39,11 @@ async function startChat() {
   return {
     db,
     user,
-    post: async (body) => (await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json(),
+    post: async (body) => {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const text = await res.text();
+      try { return JSON.parse(text); } catch { return { error: `server error ${res.status}: ${text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").slice(0, 200)}` }; }
+    },
     remove: (conversationId) => fetch(`${url}/${conversationId}`, { method: "DELETE" }),
     pause: () => new Promise((ok) => setTimeout(ok, RATE_PAUSE_MS)),
     close: async () => { server.close(); await db.end(); },

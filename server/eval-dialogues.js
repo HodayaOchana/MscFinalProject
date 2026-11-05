@@ -20,6 +20,8 @@
  *   refine      2-3 turns that narrow the first answer
  *   about-book  "is this book for me?" - also from a book's page (bookId, like the Ask button)
  *   near-me     books on the shelves of the reader's city or near them (with a location)
+ *   acts        uses the site through the chat: add to the list, rate, remember, what's on my
+ *               shelf, what readers say, how the site works
  *   small-talk  thanks, hello, a vague message
  *   edge        not a book question, a book that is not in the catalog, an attempt to
  *               change the bot's rules, a message in another language
@@ -38,28 +40,19 @@ const DIALOGUES = [
   ["discover", ["I loved The Night Circus. What else would I like?"]],
   ["discover", ["A cozy mystery for a rainy weekend"]],
   ["discover", ["Books that feel like Harry Potter but for adults"]],
-  ["discover", ["A classic I can actually finish - not too long, not too heavy"]],
-  ["discover", ["Something sad and beautiful, I want to cry"]],
-  ["discover", ["Historical fiction set in World War II"]],
   ["discover", ["A thriller with a twist I won't see coming"]],
-  ["discover", ["Funny books for a long flight"]],
-  ["discover", ["Science fiction about artificial intelligence"]],
   ["discover", ["A good first fantasy book for someone who never read fantasy"]],
-  ["discover", ["Nonfiction that reads like a novel"]],
   ["discover", ["Romance, but not cheesy"]],
-  ["discover", ["What's popular with readers like me?"]],
   // refine
   ["refine", ["A fantasy book", "Shorter, under 300 pages", "Not young adult please"]],
   ["refine", ["Something like The Hunger Games", "Older, something from before 2000"]],
   ["refine", ["A mystery novel", "I already read Agatha Christie, something else", "Is the first one available in Tel Aviv?"]],
-  ["refine", ["Books about friendship", "More grown-up, not for kids"]],
   ["refine", ["Recommend me a horror book", "Less gore, more creepy atmosphere"]],
   ["refine", ["Something by Stephen King", "Which of those is the shortest?"]],
   ["refine", ["A book for my 12-year-old nephew", "He likes adventure and animals"]],
   ["refine", ["What should I read next?", "Not fantasy this time"]],
   // about-book
   ["about-book", ["Tell me about The Hobbit - is it for me?"]],
-  ["about-book", ["Is 1984 worth reading?"]],
   ["about-book", ["What is Pride and Prejudice about, without spoilers?"]],
   ["about-book", ["Should I read The Hunger Games or Divergent first?"]],
   ["about-book", ["Tell me about this book"], { book: "The Book Thief" }],
@@ -72,6 +65,16 @@ const DIALOGUES = [
   ["near-me", ["Do you have The Hunger Games? Is it available in Jerusalem?"]],
   ["near-me", ["Which libraries are in Haifa?"]],
   ["near-me", ["A book I can borrow near me"]], // no location shared - should ask for it
+  // acts
+  ["acts", ["Please add The Hobbit to my reading list"]],
+  ["acts", ["I just finished The Hunger Games. 4 stars from me."]],
+  ["acts", ["I can't stand horror, please remember that for the future. What's a good thriller?"]],
+  ["acts", ["What's on my reading list?"]],
+  ["acts", ["What do people say about The Book Thief?"]],
+  ["acts", ["How do I write a review here?"]],
+  ["acts", ["Let me rate a few books"]],
+  ["acts", ["My favorite genres are fantasy and history now"]],
+  ["acts", ["I want to review The Hobbit: charming, but slow in the middle. 4 stars."]],
   // small-talk
   ["small-talk", ["thanks!"]],
   ["small-talk", ["Hi! What can you do?"]],
@@ -127,6 +130,10 @@ const DIALOGUES = [
         reply: r.reply,
         books: r.books.map((b) => ({ id: b.id, title: b.title, author: b.authors?.[0] || null, thumbnail: b.thumbnail_url || null })),
         followUps: r.followUps,
+        actions: r.actions || [],
+        ratingOffer: r.ratingOffer || null,
+        quickSave: r.quickSave || [],
+        ratingRound: Boolean(r.ratingRound),
         ...(t === 0 && options.location ? { location: "shared" } : {}),
         ...(t === 0 && bookId ? { aboutBook: options.book } : {}),
       });

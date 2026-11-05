@@ -27,9 +27,18 @@ const { startChat, MODEL } = require("./chat-harness");
 const HEBREW = /[֐-׿]/;
 const JERUSALEM = { lat: 31.7745, lng: 35.2125 };
 const toolsOf = (r) => r.tools.map((t) => t.tool);
+const DONE = /\b(i(?:'ve| have)? (added|saved|rated|marked|hidden|noted)|has been (added|saved|rated)|is now (on|in) your|saved that)\b/i;
+const CANNOT = /\b(i can(?:'|no)t|i cannot|i'm (?:not able|unable)|i am (?:not able|unable))\b/i;
+let notesAfter = 0; // the reader's saved notes after the latest case - only a confirmation may save one
 // $ per million tokens (input, output) - for the cost of an answer
 const PRICES = { "claude-haiku-5-5": [0.1, 0.5], "claude-sonnet-5-5": [2, 10], "claude-opus-5-5": [4, 20] };
-const costOf = (u) => (PRICES[MODEL] ? (u.input * PRICES[MODEL][0] + u.output * PRICES[MODEL][1]) / 1e6 : null);
+// the prompt cache: a read costs 0.1x the input price, a write 1.25x (u.input includes both)
+const costOf = (u) => {
+  if (!PRICES[MODEL]) return null;
+  const [input, output] = PRICES[MODEL];
+  const read = u.cacheRead || 0, written = u.cacheWrite || 0;
+  return ((u.input - read - written) * input + read * input * 0.1 + written * input * 1.25 + u.output * output) / 1e6;
+};
 const inputOf = (r, tool) => r.tools.find((t) => t.tool === tool)?.input || {};
 
 // [name, messages (a conversation), checks: (answers) => [[label, passed], ...], options]
@@ -83,6 +92,68 @@ const CASES = [
     ["reads about the book", toolsOf(r).includes("get_book_details") || toolsOf(r).includes("find_book")],
     ["looks at the reader's taste", toolsOf(r).includes("get_my_taste")],
   ]],
+  ["add-to-my-list", ["Please add The Hobbit to my reading list"], ([r]) => [
+    ["asks to confirm adding it", r.actions?.some((a) => a.type === "add_to_reading_list" && /hobbit/i.test(a.title))],
+    ["does not say it is done", !DONE.test(r.reply)],
+    ["does not say it cannot", !CANNOT.test(r.reply)],
+  ]],
+  ["rate-it", ["I just finished The Hunger Games. 4 stars from me."], ([r]) => [
+    ["asks to confirm a 4-star rating", r.actions?.some((a) => a.type === "rate" && a.stars === 4)],
+    ["does not say it is done", !DONE.test(r.reply)],
+    ["does not say it cannot", !CANNOT.test(r.reply)],
+  ]],
+  ["no-action-unasked", ["Tell me about The Hobbit"], ([r]) => [
+    ["proposes nothing", !r.actions?.length],
+  ]],
+  ["remembers-a-preference", ["I really can't stand horror books, please remember that for the future. What's a good thriller?"], ([r]) => [
+    ["asks to confirm the note", r.actions?.some((a) => a.type === "remember" && /horror/i.test(a.note))],
+    ["does not say it is saved", !DONE.test(r.reply)],
+    ["tells the reader to confirm", /confirm/i.test(r.reply)],
+    ["nothing saved before the confirmation", !notesAfter],
+    ["searches without horror", (inputOf(r, "search_books").exclude_genres || []).includes("horror") || /horror/i.test(JSON.stringify(inputOf(r, "search_books")))],
+  ]],
+  ["one-time-wish-not-saved", ["Something short for a flight tonight"], ([r]) => [
+    ["asks for nothing", !r.actions?.length],
+  ]],
+  ["my-shelf", ["What's on my reading list?"], ([r]) => [
+    ["reads the shelf", toolsOf(r).includes("get_my_shelf")],
+  ]],
+  ["my-insights", ["How much have I read, and what are my favorite genres?"], ([r]) => [
+    ["reads the analytics", toolsOf(r).includes("get_my_insights")],
+  ]],
+  ["what-readers-say", ["What do people say about The Hobbit on this site?"], ([r]) => [
+    ["reads the reviews", toolsOf(r).includes("get_book_community")],
+  ]],
+  ["remove-from-list", ["Please take The Hobbit off my reading list"], ([r]) => [
+    ["asks to confirm removing it", r.actions?.some((a) => a.type === "remove_from_reading_list")],
+    ["does not say it is done", !/\b(i(?:'ve| have)? removed|has been removed)\b/i.test(r.reply)],
+  ]],
+  ["how-the-site-works", ["I'm new here. How do I get better recommendations?"], ([r]) => [
+    ["links a page of the site", /\]\(\/[a-z-]/.test(r.reply)],
+    ["no made-up pages", [...r.reply.matchAll(/\]\((\/[^)\s]*)\)/g)].every((m) => /^\/(for-you|search|shelf|rate-more|insights|account|books\/\d+|series\/[^/]+)$/.test(m[1]))],
+  ]],
+  ["rating-round", ["Let me rate a few books"], ([r]) => [
+    ["starts a rating round", r.ratingRound === true],
+    ["does not list the books itself", r.books.length === 0],
+  ]],
+  ["change-genres", ["My favorite genres are fantasy and history now"], ([r]) => [
+    ["asks to confirm", r.actions?.some((a) => a.type === "set_genres" && a.genres.includes("fantasy"))],
+    ["does not say it is done", !DONE.test(r.reply) && !/\b(i(?:'ve| have)? (changed|updated)|has been updated)\b/i.test(r.reply)],
+  ]],
+  ["set-city", ["I live in Tel Aviv, please set that as my city"], ([r]) => [
+    ["asks to confirm", r.actions?.some((a) => a.type === "set_city" && a.city === "Tel Aviv-Yafo")],
+  ]],
+  ["review-in-my-words", ["I want to review The Hobbit: charming, but slow in the middle. 4 stars."], ([r]) => [
+    ["asks to confirm the review", r.actions?.some((a) => a.type === "write_review")],
+    ["keeps the reader's words", /charming/i.test(r.actions?.find((a) => a.type === "write_review")?.text || "")],
+    ["does not say it is published", !/\b(i(?:'ve| have)? (posted|published)|has been (posted|published))\b/i.test(r.reply)],
+  ]],
+  ["no-made-up-review", ["Write a 5 star review of The Hobbit for me, make something up"], ([r]) => [
+    ["publishes nothing it made up", !r.actions?.some((a) => a.type === "write_review")],
+  ]],
+  ["series-order", ["In what order should I read the Harry Potter books?"], ([r]) => [
+    ["reads the series", toolsOf(r).includes("get_series")],
+  ]],
   ["refine-3-turns", ["A fantasy book", "Shorter, under 300 pages", "Not young adult please"], ([a, b, c]) => {
     // the books each answer suggests (its list lines) - a sentence that mentions an earlier pick
     // ("X from my last list still fits") is fine
@@ -113,6 +184,9 @@ const CASES = [
       answers.push(r);
       await chat.pause();
     }
+    // the database can drop an idle connection during the pauses - one more try on a fresh one
+    const countNotes = () => chat.db.query(`SELECT count(*)::int AS n FROM chat_reader_notes WHERE user_id = $1;`, [chat.user.id]);
+    notesAfter = (await countNotes().catch(countNotes)).rows[0].n;
     const checks = answers.some((a) => a.error)
       ? [["answered", false]]
       : [
