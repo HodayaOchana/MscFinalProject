@@ -225,6 +225,7 @@ app.get("/api/books/:id", wrap(async (req, res) => {
     [id]
   );
   if (!rows[0]) return res.status(404).json({ error: "book not found" });
+  const [{ avgRating = null, ratingCount = null } = {}] = await addPeek(db, rows); // the average of all ratings, for the top of the book page
   // the book's series, for a "Book 3 of Harry Potter" link (db/add-series.js)
   let series = null;
   if (await hasSeriesColumns(db)) {
@@ -245,7 +246,7 @@ app.get("/api/books/:id", wrap(async (req, res) => {
   const { rows: tags } = await db.query(
     `SELECT tag FROM book_reader_tags WHERE book_id = $1 ORDER BY count DESC LIMIT 10;`, [id]
   ).catch(() => ({ rows: [] }));
-  res.json({ ...rows[0], series, authorAccounts, readerTags: tags.map((t) => t.tag) });
+  res.json({ ...rows[0], avgRating, ratingCount, series, authorAccounts, readerTags: tags.map((t) => t.tag) });
 }));
 
 app.get("/api/books/:id/similar", wrap(async (req, res) => {

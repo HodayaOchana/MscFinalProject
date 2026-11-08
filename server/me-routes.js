@@ -16,7 +16,8 @@
  *   DELETE /api/me/ratings/:bookId
  *   POST   /api/me/events                { bookId, type }             saved | unsaved | started | finished | dismissed | clicked
  *                                        (in the app "saved" = on the user's TBR list, "to be read")
- *   GET    /api/me/shelf                 { saved: [...], finished: [...] }  (from the events)
+ *   POST   /api/me/events/reason         { bookId, reason }           why "Not for me": already_read | not_my_taste | not_now
+ *   GET    /api/me/shelf                 { saved: [...], reading: [...], finished: [...] }  (from the events)
  *   GET    /api/me/consents              { needed, versions, current: { terms, privacy, age_16, research } }
  *   POST   /api/me/consents              { terms, privacy, age16, research, source } - only the keys sent are saved
  *   GET    /api/me/recommendations/rows  the For You page as shelves: "Top 10" + one row per genre
@@ -57,6 +58,7 @@ const { GENRES } = require(path.join(__dirname, "..", "onboarding", "genres"));
 const GENRE_LABEL = new Map(GENRES.map((g) => [g.key, g.label]));
 
 const EVENT_TYPES = new Set(["saved", "unsaved", "started", "finished", "dismissed", "clicked"]);
+const DISMISS_REASONS = new Set(["already_read", "not_my_taste", "not_now"]);
 const CITIES = new Set(["Jerusalem", "Tel Aviv-Yafo"]);
 
 // The user's recommendations from the saved ratings + genres (also used by the chatbot, server/chat.js)
@@ -432,27 +434,42 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     res.json({ ok: true });
   }));
 
-  // ---------- shelf: saved + finished books (from the events) ----------
+  // "Not for me" - why, answered after the ✕ (optional): goes on the latest "dismissed" event of the book
+  router.post("/events/reason", wrap(async (req, res) => {
+    const bookId = checkId(req.body.bookId);
+    const reason = String(req.body.reason || "");
+    if (!DISMISS_REASONS.has(reason)) throw new BadRequest(`reason must be one of: ${[...DISMISS_REASONS].join(", ")}`);
+    const { rowCount } = await db.query(
+      `UPDATE user_events SET reason = $3
+       WHERE id = (SELECT id FROM user_events WHERE user_id = $1 AND book_id = $2 AND type = 'dismissed'
+                   ORDER BY created_at DESC LIMIT 1);`,
+      [req.user.id, bookId, reason]
+    );
+    if (!rowCount) throw new BadRequest("this book was not hidden");
+    res.json({ ok: true });
+  }));
+
+  // ---------- shelf: saved + reading + finished books (from the events) ----------
+  // A book is in ONE stage, by its latest event: saved / started / finished. After "unsaved"
+  // it leaves the TBR, but a book the reader finished stays finished.
   router.get("/shelf", wrap(async (req, res) => {
     const { rows } = await db.query(
-      `WITH last_save AS (
+      `WITH latest AS (
          SELECT DISTINCT ON (book_id) book_id, type, created_at
-         FROM user_events WHERE user_id = $1 AND type IN ('saved', 'unsaved')
+         FROM user_events WHERE user_id = $1 AND type IN ('saved', 'unsaved', 'started', 'finished')
          ORDER BY book_id, created_at DESC
-       ), finished AS (
-         SELECT book_id, max(created_at) AS created_at
-         FROM user_events WHERE user_id = $1 AND type = 'finished' GROUP BY book_id
+       ), done AS (
+         SELECT DISTINCT book_id FROM user_events WHERE user_id = $1 AND type = 'finished'
        )
-       SELECT 'saved' AS list, b.id, b.title, b.authors, b.thumbnail_url, s.created_at AS at
-       FROM last_save s JOIN books b ON b.id = s.book_id WHERE s.type = 'saved'
-       UNION ALL
-       SELECT 'finished', b.id, b.title, b.authors, b.thumbnail_url, f.created_at
-       FROM finished f JOIN books b ON b.id = f.book_id
+       SELECT CASE l.type WHEN 'saved' THEN 'saved' WHEN 'started' THEN 'reading' ELSE 'finished' END AS list,
+              b.id, b.title, b.authors, b.thumbnail_url, l.created_at AS at
+       FROM latest l JOIN books b ON b.id = l.book_id LEFT JOIN done d ON d.book_id = l.book_id
+       WHERE l.type IN ('saved', 'started') OR d.book_id IS NOT NULL
        ORDER BY at DESC;`,
       [req.user.id]
     );
     const pick = (list) => rows.filter((r) => r.list === list).map(({ list: _l, at, ...b }) => ({ ...b, at }));
-    res.json({ saved: pick("saved"), finished: pick("finished") });
+    res.json({ saved: pick("saved"), reading: pick("reading"), finished: pick("finished") });
   }));
 
   // ---------- recommendations from the saved ratings ----------

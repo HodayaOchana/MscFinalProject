@@ -79,6 +79,9 @@ CREATE TABLE IF NOT EXISTS user_events (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS user_events_user_idx ON user_events (user_id, created_at DESC);
+-- "Not for me" - why (optional, asked after the ✕): already read it / not my kind of book / not right now
+ALTER TABLE user_events ADD COLUMN IF NOT EXISTS reason text
+  CHECK (reason IN ('already_read', 'not_my_taste', 'not_now'));
 `;
 
 async function main() {

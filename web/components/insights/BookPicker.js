@@ -32,7 +32,7 @@ function Fan({ books, size = 44 }) {
       {shown.map((b, i) => (
         <span key={b.id} className="absolute top-0 block transition-transform duration-300 group-hover/pick:-translate-y-0.5"
           style={{ left: i * 11, width: size, transform: `rotate(${(i - (shown.length - 1) / 2) * 7}deg)`, zIndex: 3 - i }}>
-          <Cover book={b} small className="shadow-[0_4px_10px_rgba(43,33,28,0.25)]" />
+          <Cover book={b} small className="shadow-[0_4px_10px_rgba(60,35,15,0.25)]" />
         </span>
       ))}
     </span>
@@ -108,7 +108,7 @@ export default function BookPicker({ books, all, value, onChange }) {
   return (
     <div ref={box} className="relative z-30 w-full max-w-[640px]" onKeyDown={onKey}>
       <button ref={button} type="button" onClick={toggle} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId}
-        className={`group/pick flex w-full cursor-pointer items-center gap-4 border border-white/70 bg-[rgba(255,251,244,0.55)] py-3 pl-4 pr-5 text-left text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_12px_30px_rgba(43,33,28,0.12)] backdrop-blur-xl backdrop-saturate-150 transition-[border-radius,background-color] hover:bg-[rgba(255,251,244,0.75)] ${open ? "rounded-t-[22px]" : "rounded-[22px]"}`}>
+        className={`group/pick flex w-full cursor-pointer items-center gap-4 border border-line-strong bg-cream/90 py-3 pl-4 pr-5 text-left text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_12px_30px_rgba(60,35,15,0.12)] backdrop-blur-xl backdrop-saturate-150 transition-[border-radius,background-color] hover:bg-cream/90 ${open ? "rounded-t-md" : "rounded-md"}`}>
         {current.isAll ? <Fan books={books} /> : (
           <span className="block w-11 flex-none transition-transform duration-300 group-hover/pick:-rotate-3 group-hover/pick:scale-105 motion-reduce:transition-none">
             <Cover book={current} small />
@@ -119,18 +119,18 @@ export default function BookPicker({ books, all, value, onChange }) {
           <span className="truncate font-serif text-[22px] font-semibold leading-tight">{current.title}</span>
           <span className="truncate text-[13px] text-ink-soft">{sub}</span>
         </span>
-        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-ink text-parchment"><Chevron open={open} /></span>
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-rust-soft text-rust-dark"><Chevron open={open} /></span>
       </button>
 
       {/* the list: rises gently into place */}
-      <div className={`absolute inset-x-0 top-full origin-top overflow-hidden rounded-b-[22px] border border-t-0 border-white/70 bg-[rgba(255,251,244,0.88)] shadow-[0_22px_40px_rgba(43,33,28,0.2)] backdrop-blur-xl backdrop-saturate-150 transition-[opacity,transform,visibility] motion-reduce:transition-none ${open ? "visible translate-y-0 opacity-100 duration-500 ease-[cubic-bezier(.16,1,.3,1)]" : "invisible -translate-y-2 opacity-0 duration-150"}`}>
-        <div className="mx-4 border-t border-[rgba(43,33,28,0.12)]" />
+      <div className={`absolute inset-x-0 top-full origin-top overflow-hidden rounded-b-md border border-t-0 border-line-strong bg-cream/90 shadow-[0_22px_40px_rgba(60,35,15,0.2)] backdrop-blur-xl backdrop-saturate-150 transition-[opacity,transform,visibility] motion-reduce:transition-none ${open ? "visible translate-y-0 opacity-100 duration-500 ease-[cubic-bezier(.16,1,.3,1)]" : "invisible -translate-y-2 opacity-0 duration-150"}`}>
+        <div className="mx-4 border-t border-line" />
         {books.length >= FILTER_FROM && (
           <div className="px-4 pt-3">
             <input ref={search} value={filter} onChange={(e) => { setFilter(e.target.value); setActive(0); }} tabIndex={open ? 0 : -1}
               placeholder="Find one of your books…" aria-label="Find one of your books" aria-controls={listId}
               aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
-              className="w-full rounded-full border border-line-strong bg-cream/80 px-4 py-2 text-sm text-ink outline-none focus:border-ink" />
+              className="w-full rounded-md border border-line-strong bg-cream/80 px-4 py-2 text-sm text-ink outline-none focus:border-ink" />
           </div>
         )}
         <ul id={listId} role="listbox" aria-label="Your books" className="m-0 max-h-[360px] list-none overflow-y-auto p-2">
@@ -141,7 +141,7 @@ export default function BookPicker({ books, all, value, onChange }) {
             return (
               <li key={o.id} id={`${listId}-${i}`} role="option" aria-selected={selected}
                 onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(o)}
-                className={`group/opt flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 ${i === active ? "bg-white/70" : ""} ${o.isAll ? "mb-1" : ""}`}>
+                className={`group/opt flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 ${i === active ? "bg-sand" : ""} ${o.isAll ? "mb-1" : ""}`}>
                 {o.isAll ? <Fan books={books} size={30} /> : (
                   <span className="block w-[30px] flex-none transition-transform duration-300 group-hover/opt:-rotate-3 group-hover/opt:scale-110 motion-reduce:transition-none">
                     <Cover book={o} small />

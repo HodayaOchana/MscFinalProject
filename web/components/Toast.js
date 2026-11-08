@@ -18,9 +18,9 @@ export function useToast(ms = 3500) {
 
 export default function Toast({ toast }) {
   return (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-20 z-50 lg:bottom-6 flex justify-center px-4">
       {toast && (
-        <div key={toast.key} className="toast rounded-full bg-ink px-5 py-3 text-sm font-medium text-parchment shadow-[0_12px_30px_rgba(43,33,28,0.3)]">
+        <div key={toast.key} className="toast rounded-md border border-line-strong bg-cream px-5 py-3 text-sm font-medium text-ink shadow-[0_12px_30px_rgba(60,35,15,0.3)]">
           {toast.text}
         </div>
       )}

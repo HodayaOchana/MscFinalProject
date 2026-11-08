@@ -32,7 +32,7 @@ export default function AuthorDetails({ id }) {
             {author.books.length} {author.books.length === 1 ? "book" : "books"}
             {author.website && <> · <a href={author.website} target="_blank" rel="noopener noreferrer nofollow">{host(author.website)} ↗</a></>}
           </span>
-          {author.bio && <p className="m-0 max-w-[680px] whitespace-pre-line text-[17px] leading-relaxed text-[#3D3029]">{author.bio}</p>}
+          {author.bio && <p className="m-0 max-w-[680px] whitespace-pre-line text-[17px] leading-relaxed text-ink-soft">{author.bio}</p>}
           {author.isMe && (
             <Link href="/account#author" className="self-start text-sm">This is your page – edit it on your Account page</Link>
           )}

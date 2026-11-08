@@ -16,7 +16,7 @@
  * close enough (or the reader rated nothing yet), the general sentence stays.
  *
  *   const { explainRecommendations } = require("./explain");
- *   recs = await explainRecommendations(db, userId, recs, genres)   // sets reasonText
+ *   recs = await explainRecommendations(db, userId, recs, genres)   // sets reasonText (and reasonBook)
  */
 
 const path = require("path");
@@ -50,7 +50,7 @@ async function explainRecommendations(db, userId, recs, chosenGenres = []) {
   const closest = async (table, recIds) => {
     if (!recIds.length) return new Map();
     const { rows } = await db.query(
-      `SELECT DISTINCT ON (s.neighbor_id) s.neighbor_id AS rec, b.title
+      `SELECT DISTINCT ON (s.neighbor_id) s.neighbor_id AS rec, b.id, b.title, b.thumbnail_url
        FROM user_ratings u
        JOIN ${table} s ON s.book_id = u.book_id AND s.neighbor_id = ANY($2::int[])
        JOIN books b ON b.id = u.book_id
@@ -58,7 +58,7 @@ async function explainRecommendations(db, userId, recs, chosenGenres = []) {
        ORDER BY s.neighbor_id, s.similarity * u.rating DESC;`,
       [userId, recIds]
     );
-    return new Map(rows.map((r) => [r.rec, shortTitle(r.title)]));
+    return new Map(rows.map((r) => [r.rec, { id: r.id, title: shortTitle(r.title), thumbnail_url: r.thumbnail_url }]));
   };
   const [byReaders, byContent, { rows: info }] = await Promise.all([
     closest("item_similarity", recs.filter(isCf).map((r) => r.id)),
@@ -69,17 +69,18 @@ async function explainRecommendations(db, userId, recs, chosenGenres = []) {
 
   return recs.map((r) => {
     let text;
+    let reasonBook = null; // the reader's own loved book behind this pick - the card shows its cover
     if (isCf(r)) {
-      const t = byReaders.get(r.id);
-      text = t ? `Readers who loved ${t} also loved this` : "Readers with your taste loved it";
+      reasonBook = byReaders.get(r.id);
+      text = reasonBook ? `Readers who loved ${reasonBook.title} also loved this` : "Readers with your taste loved it";
     } else if (isCbf(r)) {
-      const t = byContent.get(r.id);
-      text = t ? `Similar to ${t}, which you loved` : "Similar to books you loved";
+      reasonBook = byContent.get(r.id);
+      text = reasonBook ? `Similar to ${reasonBook.title}, which you loved` : "Similar to books you loved";
     } else {
       const g = (keysOf.get(r.id) || []).find((k) => chosenGenres.includes(k));
       text = r.reason === "Popular in your genres" && g ? `A favorite of ${LABEL.get(g)} readers` : "Loved by many readers";
     }
-    return { ...r, reasonText: text };
+    return { ...r, reasonText: text, ...(reasonBook ? { reasonBook } : {}) };
   });
 }
 

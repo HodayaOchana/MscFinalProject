@@ -1,7 +1,7 @@
 // Loading animation: books on a shelf topple over and stand up again (styles in globals.css)
 const BOOKS = [
   { w: 16, h: 52, c: "#7A3B22" },
-  { w: 20, h: 60, c: "#556030" },
+  { w: 20, h: 60, c: "#5E5A2B" },
   { w: 14, h: 46, c: "#B8893B" },
   { w: 18, h: 56, c: "#5B2A1E" },
   { w: 22, h: 50, c: "#2F3B33" },

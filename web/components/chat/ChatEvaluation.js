@@ -31,8 +31,11 @@ const CRITERIA = [
 ];
 const KIND = {
   discover: "Finding a book", refine: "Narrowing down", "about-book": "About one book",
-  "near-me": "Libraries & location", "small-talk": "Small talk", edge: "Tricky request",
+  "near-me": "Libraries & location", acts: "Using the site through the chat", "small-talk": "Small talk", edge: "Tricky request",
 };
+
+const ACTION_NAME = { add_to_reading_list: "Add to TBR:", mark_finished: "Mark finished:", not_for_me: "Not for me:", remove_from_reading_list: "Remove from TBR:", rate: "Rate", delete_rating: "Delete rating of", remember: "Remember:",
+  write_review: "Publish review of", delete_review: "Delete review of", post_in_discussion: "Post about", delete_post: "Delete post", set_genres: "Set genres", set_city: "Set city", clear_search_history: "Clear search history" };
 
 const asBook = (b) => ({ id: b.id, title: b.title, authors: b.author ? [b.author] : [], thumbnail_url: b.thumbnail });
 
@@ -49,7 +52,7 @@ function Dialogue({ d }) {
                   {t.aboutBook ? <>Asked from the page of <em>{t.aboutBook}</em></> : "Location shared"}
                 </span>
               )}
-              <p dir="auto" className="m-0 max-w-[85%] rounded-2xl rounded-ee-sm bg-ink px-4 py-2.5 text-parchment">{t.message}</p>
+              <p dir="auto" className="m-0 max-w-[85%] rounded-md rounded-ee-sm bg-ink px-4 py-2.5 text-parchment">{t.message}</p>
             </div>
             <div className="card flex flex-col gap-3 px-5 py-4 text-[15px] leading-relaxed">
               <Reply text={t.reply} books={books} />
@@ -62,6 +65,14 @@ function Dialogue({ d }) {
                   ))}
                 </div>
               )}
+              {t.actions?.length > 0 && (
+                <p className="m-0 text-sm text-ink-soft">
+                  <strong>Asks the reader to confirm</strong> (nothing happens before that): {t.actions.map((a) => `${ACTION_NAME[a.type] || a.type} ${a.title || a.note || a.city || a.labels?.join(", ") || ""}${a.stars ? ` ${a.stars}★` : ""}${a.text ? `: “${a.text}”` : ""}`).join(" · ")}
+                </p>
+              )}
+              {t.ratingOffer && <p className="m-0 text-sm text-ink-soft"><strong>Also offers:</strong> {t.ratingOffer.myRating ? "a review of" : "stars for"} “{t.ratingOffer.title}”</p>}
+              {t.quickSave?.length > 0 && <p className="m-0 text-sm text-ink-soft"><strong>One-press add to TBR:</strong> {t.quickSave.map((b) => b.title).join(" · ")}</p>}
+              {t.ratingRound && <p className="m-0 text-sm text-ink-soft"><strong>Also shows:</strong> a few books from the reader’s genres to rate with one press each</p>}
               {t.followUps?.length > 0 && (
                 <p className="m-0 text-sm text-muted">Suggested next questions: {t.followUps.join(" · ")}</p>
               )}
@@ -92,7 +103,7 @@ function Rating({ d, onSaved }) {
       <div role="radiogroup" aria-label="Score" className="grid grid-cols-5 gap-2">
         {SCORES.slice().reverse().map(([n, label, help]) => (
           <button key={n} type="button" role="radio" aria-checked={score === n} title={help} onClick={() => setScore(n)}
-            className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-xl border py-2.5 transition-colors ${score === n ? "border-rust bg-rust text-cream" : "border-line-strong bg-parchment text-ink hover:border-rust"}`}>
+            className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-md border py-2.5 transition-colors ${score === n ? "border-rust bg-rust text-cream" : "border-line-strong bg-parchment text-ink hover:border-rust"}`}>
             <span className="font-serif text-2xl font-semibold leading-none">{n}</span>
             <span className="text-xs">{label}</span>
           </button>
@@ -144,7 +155,7 @@ function Results() {
           <article key={m.model} className="card flex flex-col gap-4 p-5">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="m-0 font-serif text-xl font-semibold">{m.model}</h2>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${met ? "bg-moss-soft text-moss-dark" : "bg-sand text-[#5E4A2A]"}`}>
+              <span className={`rounded-md px-2.5 py-0.5 text-xs font-bold uppercase ${met ? "bg-moss-soft text-moss-dark" : "bg-sand text-ink-soft"}`}>
                 {met ? "goal met" : m.fullyRated < goal.dialogues ? "in progress" : "below goal"}
               </span>
             </div>
@@ -214,12 +225,12 @@ export default function ChatEvaluation() {
         <div className="flex flex-col gap-1">
           <span className="eyebrow">Evaluation</span>
           <h1 className="m-0 font-serif text-5xl font-semibold">Rate the chatbot</h1>
-          <p className="m-0 text-ink-soft">Score each sample conversation with BookBridge’s reading assistant from 1 to 5. You can change a score any time.</p>
+          <p className="m-0 text-ink-soft">Score each sample conversation with BookBridge’s reading assistant from 1 to 5. You can change a score any time. <a href="/evaluate/feedback">What real readers say →</a></p>
         </div>
         <div role="tablist" aria-label="Evaluation sections" className="flex flex-wrap gap-2">
           {[["rate", "Rate"], ["results", "Results"]].map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-              className={`cursor-pointer rounded-full border px-4 py-2 text-sm ${tab === k ? "border-ink bg-ink text-parchment" : "border-line-strong bg-transparent text-ink hover:border-rust hover:text-rust"}`}>
+              className={`cursor-pointer rounded-md border px-4 py-2 text-sm ${tab === k ? "border-ink bg-rust-soft text-rust-dark" : "border-line-strong bg-transparent text-ink hover:border-rust hover:text-rust"}`}>
               {label}
             </button>
           ))}

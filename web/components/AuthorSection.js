@@ -45,7 +45,7 @@ function RequestForm({ onSent, onCancel, again, penName, ready }) {
           ? "Publish under another name too? Your publisher confirms it the same way."
           : "Wrote a book? Your posts in its discussion get an Author badge, you can pin a message for your readers, add new books, and see how readers respond to your books."}
       </p>
-      <p className="m-0 rounded-xl bg-parchment px-4 py-3 text-sm text-ink-soft">
+      <p className="m-0 rounded-md bg-parchment px-4 py-3 text-sm text-ink-soft">
         <strong>How we confirm it’s you:</strong> we email your publisher a one-time link, and they confirm that you are their author – the way bookstores and streaming services check authors and artists.
       </p>
       <label className="flex flex-col gap-1.5 text-sm font-medium">Pen name
@@ -97,11 +97,11 @@ function ProfileEditor({ userId, profile, verifiedNames, hasBooks, onSaved }) {
 
   if (!editing) {
     return (
-      <div className="flex flex-col gap-2 rounded-xl bg-parchment px-5 py-4">
+      <div className="flex flex-col gap-2 rounded-md bg-parchment px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <span className="font-serif text-2xl font-semibold">{profile.penName}</span>
           {verifiedNames.length > 0 && (
-            <span title="Confirmed by your publisher – it can't be changed here" className="rounded-full bg-moss-soft px-2.5 py-0.5 text-xs font-bold text-moss-dark">
+            <span title="Confirmed by your publisher – it can't be changed here" className="rounded-md bg-moss-soft px-2.5 py-0.5 text-xs font-bold text-moss-dark">
               ✓ Verified: {verifiedNames.join(" / ")}
             </span>
           )}
@@ -118,7 +118,7 @@ function ProfileEditor({ userId, profile, verifiedNames, hasBooks, onSaved }) {
     );
   }
   return (
-    <form onSubmit={save} className="flex flex-col gap-4 rounded-xl bg-parchment px-5 py-4">
+    <form onSubmit={save} className="flex flex-col gap-4 rounded-md bg-parchment px-5 py-4">
       <label className="flex flex-col gap-1.5 text-sm font-medium"><span>Name on your page <span className="font-normal text-muted">(your verified name stays {verifiedNames.join(" / ") || "–"})</span></span>
         <input name="penName" required maxLength={120} defaultValue={profile.penName} className="field font-normal" />
       </label>
@@ -151,7 +151,7 @@ function RequestStatus({ r, isAuthor, onResent }) {
   }
   if (r?.status === "pending") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl bg-sand px-4 py-3 text-[#5E4A2A]">
+      <div className="flex flex-col gap-2 rounded-md bg-sand px-4 py-3 text-ink-soft">
         <p className="m-0">
           {r.emailSentAt
             ? <>We emailed <strong>{r.publisherName || "your publisher"}</strong> ({r.publisherEmail}) on {day(r.emailSentAt)} to confirm you as <strong>{r.penName}</strong>. As soon as they confirm, you’re an author here.</>
@@ -168,13 +168,13 @@ function RequestStatus({ r, isAuthor, onResent }) {
   }
   if (r?.status === "rejected") {
     return (
-      <p className="m-0 rounded-xl bg-rust-soft px-4 py-3 text-rust-dark">
+      <p className="m-0 rounded-md bg-rust-soft px-4 py-3 text-rust-dark">
         Your request from {day(r.createdAt)} was not confirmed{r.note ? ` – ${r.note}` : ""}. You can send a new one.
       </p>
     );
   }
   if (r?.status === "approved" && !isAuthor) {
-    return <p className="m-0 rounded-xl bg-moss-soft px-4 py-3 text-moss-dark">Your request was approved{r.note ? ` – ${r.note}` : ""}.</p>;
+    return <p className="m-0 rounded-md bg-moss-soft px-4 py-3 text-moss-dark">Your request was approved{r.note ? ` – ${r.note}` : ""}.</p>;
   }
   return null;
 }
@@ -227,13 +227,13 @@ export default function AuthorSection() {
         )}
 
         {pendingClaims.length > 0 && (
-          <div className="flex flex-col gap-1.5 rounded-xl bg-sand px-4 py-3 text-sm text-[#5E4A2A]">
+          <div className="flex flex-col gap-1.5 rounded-md bg-sand px-4 py-3 text-sm text-ink-soft">
             <strong>Waiting for the team</strong>
             {pendingClaims.map((c) => <span key={c.id}>{c.title} – sent {day(c.createdAt)}</span>)}
           </div>
         )}
         {decidedClaims.map((c) => (
-          <p key={c.id} className={`m-0 rounded-xl px-4 py-2 text-sm ${c.status === "approved" ? "bg-moss-soft text-moss-dark" : "bg-rust-soft text-rust-dark"}`}>
+          <p key={c.id} className={`m-0 rounded-md px-4 py-2 text-sm ${c.status === "approved" ? "bg-moss-soft text-moss-dark" : "bg-rust-soft text-rust-dark"}`}>
             {c.title}: {c.status === "approved" ? "linked to you" : "not linked"}{c.note ? ` – ${c.note}` : ""}
           </p>
         ))}
@@ -263,7 +263,7 @@ export default function AuthorSection() {
         <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="author-body"
           className="flex w-full cursor-pointer items-center gap-3 bg-transparent p-6 text-left font-serif text-3xl font-semibold text-ink">
           <span className="flex-1">Are you an author?</span>
-          {status && <span className="rounded-full bg-sand px-2.5 py-0.5 font-sans text-xs font-bold uppercase text-[#5E4A2A]">{status}</span>}
+          {status && <span className="rounded-md bg-sand px-2.5 py-0.5 font-sans text-xs font-bold uppercase text-ink-soft">{status}</span>}
           <Chevron open={open} />
         </button>
       </h2>

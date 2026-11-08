@@ -22,13 +22,13 @@ export default function PrivacyPage() {
       <h2>2. What we collect</h2>
       <ul>
         <li><strong>Account details:</strong> your name, email address and password. Passwords are stored only in hashed form by our login provider; we never see them.</li>
-        <li><strong>Your reading profile:</strong> the genres you choose, the books you rate, books you add to your TBR (“to be read”) list, mark as finished or hide (“Not for me”), and your preferred city.</li>
+        <li><strong>Your reading profile:</strong> the genres you choose, the books you rate, books you add to your TBR (“to be read”) list, mark as finished or hide (“Not for me”) – and, if you tell us, why you hid one – and your preferred city.</li>
         <li><strong>Your searches:</strong> what you search for on the Search page and which result you open, shown to you as “Recent searches”. You can remove one or clear them all on the Search page.</li>
         <li><strong>What you post:</strong> reviews you write and your posts and replies in book discussions.</li>
         <li><strong>Author requests</strong> (only if you send one): your pen name, the books you list and your message, so we can check that you are the author.</li>
         <li><strong>Your consent choices:</strong> which version of these documents you agreed to and when, and whether you allowed research use.</li>
         <li><strong>Location – only when you ask for it:</strong> if you choose “Near my location”, or “Use my location” in the chat, your browser sends your approximate coordinates to find libraries nearby. They are used for that request only and are <strong>not stored</strong>.</li>
-        <li><strong>Questions to the assistant</strong> (“Ask {SITE.name}”): the messages you write and its answers, kept in your chat history until you delete them.</li>
+        <li><strong>Questions to the assistant</strong> (“Ask {SITE.name}”): the messages you write and its answers, kept in your chat history until you delete them. If you tell the assistant a lasting reading preference (“I don’t like horror”), it asks you to confirm, and then saves that note to use in later chats. You can see these notes under “What I remember” on the chat page and delete any of them. If you mark an answer 👍 or 👎 (and say why), that is saved with the answer; the project team reviews these, without names or emails, to improve the assistant.</li>
       </ul>
       <p>We do not collect payment details, and we do not use advertising or analytics trackers.</p>
 
@@ -57,12 +57,21 @@ export default function PrivacyPage() {
         <li>The hosting provider that runs the website.</li>
       </ul>
       <p>These providers may store data on servers outside Israel (for example in the United States or Europe).</p>
+      <p>
+        Some public services are contacted straight from your browser. They receive your IP address, as any website you visit does, but nothing from your account:
+      </p>
+      <ul>
+        <li><strong>Wikipedia (Wikimedia Foundation)</strong> – Inkling, the bookworm, looks up book titles and author names on Wikipedia to share facts about them, and checks which writers were born today. Only the title or name is sent, never what you rated, saved or searched.</li>
+        <li><strong>OpenStreetMap</strong> – the map tiles on library maps.</li>
+        <li><strong>Google Maps and Waze</strong> – only if you click a directions or parking link in “Plan your visit”, which opens their site with the library’s location.</li>
+      </ul>
 
       <h2>6. Cookies and browser storage</h2>
       <p>
         We use only what the site needs to work: a login cookie that keeps you signed in, and browser storage for things
-        like the genres you picked during sign-up and whether “Use my location” is on in the chat. No advertising or
-        tracking cookies.
+        like the genres you picked during sign-up and whether “Use my location” is on in the chat. Inkling also keeps,
+        in your browser only, which notes it has already shown you (so it does not repeat itself) and whether you hid it.
+        No advertising or tracking cookies.
       </p>
 
       <h2>7. How long we keep it</h2>

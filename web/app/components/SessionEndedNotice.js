@@ -16,7 +16,7 @@ export default function SessionEndedNotice() {
   }, []);
   if (!show) return null;
   return (
-    <p role="status" className="m-0 rounded-xl border border-line-strong bg-cream px-4 py-3 text-sm text-ink-soft">
+    <p role="status" className="m-0 rounded-md border border-line-strong bg-cream px-4 py-3 text-sm text-ink-soft">
       Your session ended – please sign in again. Your ratings and shelf are saved.
     </p>
   );

@@ -52,8 +52,8 @@ export default function GenresPage() {
                 const on = picked.includes(o.value);
                 return (
                   <button key={o.value} type="button" aria-pressed={on} onClick={() => toggle(o.value)}
-                    className={`flex cursor-pointer items-center gap-2 rounded-full border px-[18px] py-[11px] text-[15px] ${on ? "border-rust bg-rust text-cream" : "border-line-strong bg-cream text-ink hover:border-ink"}`}>
-                    {on && <CheckIcon />}{o.label}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-[18px] py-[11px] text-[15px] transition-[transform,background-color,border-color] duration-150 hover:-translate-y-0.5 active:scale-95 motion-reduce:transform-none ${on ? "border-rust bg-rust text-cream" : "border-line-strong bg-cream text-ink hover:border-ink"}`}>
+                    {on && <span className="pop"><CheckIcon /></span>}{o.label}
                   </button>
                 );
               })}

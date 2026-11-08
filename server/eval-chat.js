@@ -4,6 +4,8 @@
  *
  *   node server/eval-chat.js              all cases
  *   node server/eval-chat.js dune bored   only cases whose name contains one of the words
+ *   node server/eval-chat.js --regressions   the answers real readers marked 👎 (server/eval-from-feedback.js),
+ *                                         checked by a judge model for the problem they reported
  *
  * Every answer is checked for (the proposal's success measures, section 3.2):
  *   grounded    no book in the answer that the tools did not return (ungrounded = 0)
@@ -23,6 +25,7 @@
 const path = require("path");
 const fs = require("fs");
 const { startChat, MODEL } = require("./chat-harness");
+const { judgeAnswer, judgeFaithfulness } = require("./chat-judge");
 
 const HEBREW = /[֐-׿]/;
 const JERUSALEM = { lat: 31.7745, lng: 35.2125 };
@@ -44,8 +47,24 @@ const inputOf = (r, tool) => r.tools.find((t) => t.tool === tool)?.input || {};
 // [name, messages (a conversation), checks: (answers) => [[label, passed], ...], options]
 const CASES = [
   ["like-dune-shorter", ["Something like Dune, but shorter"], ([r]) => [
-    ["looks the book up, then searches by similarity", toolsOf(r).includes("find_book") && toolsOf(r).includes("search_books")],
+    ["searches by similarity to Dune", (inputOf(r, "search_books").similar_to_titles || []).some((t) => /dune/i.test(t)) || (inputOf(r, "search_books").similar_to_book_ids || []).length > 0],
+    ["limits the pages", Boolean(inputOf(r, "search_books").max_pages)],
+    ["in one round of tools, not two (speed)", r.rounds === undefined || r.rounds <= 2],
     ["at least 2 books", r.books.length >= 2],
+  ]],
+  // asks only when it has nothing to go on - and never more than one question
+  ["clear-request-no-question", ["A funny fantasy book under 250 pages"], ([r]) => [
+    ["searches right away", toolsOf(r).includes("search_books")],
+    ["at least 2 books", r.books.length >= 2],
+    ["at most one question", (r.reply.match(/\?/g) || []).length <= 1],
+  ]],
+  ["vague-request", ["Recommend me a book"], ([r]) => [
+    ["gives books from the reader's taste, or asks one thing", r.books.length >= 1 || (r.reply.match(/\?/g) || []).length === 1],
+    ["at most one question", (r.reply.match(/\?/g) || []).length <= 1],
+  ]],
+  ["compare-two", ["Dune or Foundation - which should I read first?"], ([r]) => [
+    ["compares them side by side", toolsOf(r).includes("compare_books") && r.comparison?.books?.length === 2],
+    ["short - the table has the facts", r.reply.split(/\s+/).length <= 130],
   ]],
   ["what-next", ["What should I read next?"], ([r]) => [
     ["uses the recommendation engine (model 1)", toolsOf(r).includes("recommend_for_me")],
@@ -166,9 +185,39 @@ const CASES = [
   }],
 ];
 
+// Real misses (server/eval-from-feedback.js): the reader's 👎 answers, replayed and checked by a
+// judge model for the problem they reported. Async checks: (answers, { evidence }) => [[label, passed]]
+const REGRESSIONS = path.join(__dirname, "..", "logs", "eval-regressions.json");
+const WORDS_TOO_LONG = 150;
+function regressionCases() {
+  if (!fs.existsSync(REGRESSIONS)) throw new Error("no scenarios yet - run node server/eval-from-feedback.js first");
+  return JSON.parse(fs.readFileSync(REGRESSIONS, "utf8")).scenarios.map((s) => [s.id, s.messages, async (answers, { evidence }) => {
+    const r = answers.at(-1);
+    const question = s.messages.at(-1);
+    const verdict = await judgeAnswer({ question, reply: r.reply, reason: s.reason, context: s.messages.slice(0, -1).join(" / ") });
+    const checks = [[`the judge: does what was asked${s.reason ? ` (was: ${s.reason})` : ""}${verdict ? ` - ${verdict.why}` : ""}`, Boolean(verdict?.ok)]];
+    if (s.reason === "wrong_info") {
+      const f = await judgeFaithfulness({ question, reply: r.reply, evidence });
+      checks.push([`every claim is in the tool results${f?.unsupported.length ? ` - not: ${f.unsupported.map((u) => u.claim).join("; ")}` : ""}`, f !== null && f.unsupported.length === 0]);
+    }
+    if (s.reason === "too_long") checks.push([`under ${WORDS_TOO_LONG} words`, r.reply.split(/\s+/).length <= WORDS_TOO_LONG]);
+    return checks;
+  }]);
+}
+
+// what the tools returned in a conversation - the evidence a faithfulness check reads
+async function evidenceOf(db, conversationId) {
+  const { rows } = await db.query(`SELECT content FROM chat_messages WHERE conversation_id = $1 AND role = 'user' ORDER BY seq;`, [conversationId]);
+  return rows.flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+    .map((b) => (b.type === "tool_result" ? b.content : b.type === "text" && b.text.startsWith("<book_lookup>") ? b.text : null))
+    .filter(Boolean).join("\n");
+}
+
 (async () => {
-  const only = process.argv.slice(2);
-  const cases = only.length ? CASES.filter(([name]) => only.some((w) => name.includes(w))) : CASES;
+  const regressions = process.argv.includes("--regressions");
+  const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const pool = regressions ? regressionCases() : CASES;
+  const cases = only.length ? pool.filter(([name]) => only.some((w) => name.includes(w))) : pool;
   const chat = await startChat(); // the chat router, as the reader with the most ratings
 
   const results = [];
@@ -187,6 +236,7 @@ const CASES = [
     // the database can drop an idle connection during the pauses - one more try on a fresh one
     const countNotes = () => chat.db.query(`SELECT count(*)::int AS n FROM chat_reader_notes WHERE user_id = $1;`, [chat.user.id]);
     notesAfter = (await countNotes().catch(countNotes)).rows[0].n;
+    const evidence = conversationId && regressions ? await evidenceOf(chat.db, conversationId) : "";
     const checks = answers.some((a) => a.error)
       ? [["answered", false]]
       : [
@@ -195,7 +245,7 @@ const CASES = [
           [`english${messages.length > 1 ? ` (turn ${i + 1})` : ""}`, !HEBREW.test(a.reply)],
           [`followups${messages.length > 1 ? ` (turn ${i + 1})` : ""}`, a.followUps?.length >= 1 && a.followUps.length <= 3],
         ]),
-        ...check(answers),
+        ...(await check(answers, { evidence })),
       ];
     const ok = checks.filter(([, p]) => p).length;
     passed += ok; total += checks.length;
@@ -205,7 +255,7 @@ const CASES = [
     results.push({
       name, messages, checks: checks.map(([label, p]) => ({ label, passed: p })),
       replies: answers.map((a) => a.reply || a.error), tools: answers.map((a) => a.tools?.map((t) => t.tool)),
-      ms: answers.map((a) => a.ms ?? null), usage: answers.map((a) => a.usage ?? null),
+      ms: answers.map((a) => a.ms ?? null), usage: answers.map((a) => a.usage ?? null), rounds: answers.map((a) => a.rounds ?? null),
     });
     if (conversationId) await chat.remove(conversationId);
   }
@@ -220,11 +270,15 @@ const CASES = [
     avgInputTokens: Math.round(all.reduce((s, a) => s + a.usage.input, 0) / (all.length || 1)),
     avgOutputTokens: Math.round(all.reduce((s, a) => s + a.usage.output, 0) / (all.length || 1)),
     avgCostUsd: all.length ? Number((all.reduce((s, a) => s + costOf(a.usage), 0) / all.length).toFixed(5)) : null,
+    // each model round is a wait - the main thing that makes an answer slow
+    avgRounds: (() => { const rs = results.flatMap((r) => r.rounds || []).filter((n) => n !== null); return rs.length ? Number((rs.reduce((s, n) => s + n, 0) / rs.length).toFixed(2)) : null; })(),
   };
   console.log(`\n${MODEL}: ${passed}/${total} checks passed (${Math.round((passed / total) * 100)}%), ${results.filter((r) => r.checks.every((c) => c.passed)).length}/${results.length} cases`);
-  console.log(`per answer: median ${summary.medianMs} ms, p95 ${summary.p95Ms} ms, ${summary.avgInputTokens} + ${summary.avgOutputTokens} tokens, ~$${summary.avgCostUsd}`);
-  // a run of only some cases does not replace the full results
-  const out = path.join(__dirname, "..", "data", `eval-chat-results-${MODEL}${only.length ? "-partial" : ""}.json`);
+  console.log(`per answer: median ${summary.medianMs} ms, p95 ${summary.p95Ms} ms, ${summary.avgRounds} model rounds, ${summary.avgInputTokens} + ${summary.avgOutputTokens} tokens, ~$${summary.avgCostUsd}`);
+  // a run of only some cases does not replace the full results; real readers' scenarios stay in logs/
+  const out = regressions
+    ? path.join(__dirname, "..", "logs", `eval-regressions-results-${MODEL}.json`)
+    : path.join(__dirname, "..", "data", `eval-chat-results-${MODEL}${only.length ? "-partial" : ""}.json`);
   fs.writeFileSync(out, JSON.stringify({ date: new Date().toISOString(), model: MODEL, passed, total, summary, results }, null, 2));
   console.log(`saved: ${path.relative(process.cwd(), out)}`);
   await chat.close();

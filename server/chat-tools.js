@@ -9,6 +9,10 @@
  *                             word search on the title and description (RRF),
  *                             + filters: genres, pages, years, author, similar
  *                             to books, available in a library
+ *                             + similar_to_titles: "like Dune" in ONE call (no find_book round first)
+ *                             + closeToYourFavorite: the reader's loved book nearest in content,
+ *                               for a personal "why" ("close to Dune, which you gave 5 stars")
+ *   compare_books             2-3 books side by side ("X or Y?") - the page shows them as a table
  *   find_book                 a title the user names ("like Dune") -> book ids
  *   get_book_details          one book: full description, series, pages
  *   check_availability        where books are on the shelf (city / branch / near the reader)
@@ -56,11 +60,17 @@ const { loadSeries, diversify } = require(path.join(root, "hybrid", "diversity")
 const { CITIES } = require(path.join(root, "library", "libraries-data"));
 const { addMatch } = require("./match"); // "92% match" on the cards
 const { peekInfo } = require("./book-peek"); // the overall rating of a book (dataset + BookBridge readers)
+const { shortTitle } = require("./explain"); // "Harry Potter and the Sorcerer's Stone (Harry Potter, #1)" -> shorter
 
 // the same loaded model as new books (server/book-embedding.js) - one copy in memory
 const { extractor: getExtractor, toVector } = require("./book-embedding");
 
 const MAX_RESULTS = 10;
+// "close to a book you loved": the reader's loved book (4-5 stars) nearest in content to a result.
+// Cosine similarity of the mpnet embeddings; from 0.5 the pairs read as related (measured on the
+// most active reader: 0.56 Queen of Babble -> Bridget Jones's Diary, 0.36 unrelated)
+const CLOSE_TO_LOVED = 0.5;
+const MAX_COMPARE = 3;
 const POOL = 80;            // nearest books fetched before filters by availability / diversity
 const RRF_K = 60;           // fusing the two searches: the standard constant of Reciprocal Rank Fusion
 // the search by meaning + the search by words; CHAT_SEARCH=vector = by meaning alone (server/eval-search.js)
@@ -182,6 +192,18 @@ const tagPatterns = (tags) => {
   return tags.map((t) => String(t).replace(/[%_\\]/g, " ").trim().toLowerCase()).filter((t) => t.length >= 2).map((t) => `%${t}%`);
 };
 
+// Hashtags in the chat: a reader tag written as one word ("cozy mystery" -> #cozy-mystery).
+// The chat box suggests the popular ones (GET /api/chat/tags); a hashtag in the reader's message
+// is a must-have on every search of that answer (ctx.hashtags) - one condition each, so
+// "#cozy #british" means both. Letters, digits and "-" only, so it is safe in a LIKE pattern.
+const HASHTAG = /(?:^|\s)#([\p{L}\p{N}][\p{L}\p{N}-]{1,39})/gu;
+const MAX_HASHTAGS = 5;
+const TAG_LIST_SIZE = 600;   // the suggestions: the most used tags...
+const TAG_MIN_BOOKS = 5;     // ...on at least this many books
+const TAG_LIST_TTL = 60 * 60 * 1000;
+const slugOf = (tag) => tag.toLowerCase().trim().replace(/\s+/g, "-");
+const hashtagsIn = (message) => [...new Set([...String(message || "").matchAll(HASHTAG)].map((m) => m[1].toLowerCase()))].slice(0, MAX_HASHTAGS);
+
 // Reciprocal Rank Fusion: a book scores 1 / (k + its rank) in each list, so a book high in
 // both lists comes first. Ranks, not scores - the two searches' scores are not comparable.
 function fuseRanks(lists, k = RRF_K) {
@@ -220,11 +242,64 @@ module.exports = function chatTools({ db, recommendFor }) {
     return new Map(rows.map((r) => [r.book_id, r.tags]));
   }
 
+  // the hashtag suggestions: one query an hour, the chat box filters them itself
+  let tagList = null;
+  async function popularTags() {
+    if (tagList && Date.now() - tagList.at < TAG_LIST_TTL) return tagList.tags;
+    const { rows } = await db.query(
+      `SELECT tag, count(*)::int AS books FROM book_reader_tags WHERE NOT (tag = ANY($1::text[]))
+       GROUP BY tag HAVING count(*) >= $2 ORDER BY books DESC, tag LIMIT $3;`,
+      [NOT_ABOUT_THE_BOOK, TAG_MIN_BOOKS, TAG_LIST_SIZE]
+    ).catch((err) => (err.code === "42P01" ? { rows: [] } : Promise.reject(err)));
+    const tags = rows.map((r) => ({ tag: slugOf(r.tag), books: r.books }));
+    tagList = { at: Date.now(), tags };
+    return tags;
+  }
+
+  // For each book: the reader's loved book (4-5 stars) nearest in content, if close enough
+  // -> Map id -> { title, stars }. One query (pgvector, ~30 ms a book).
+  async function closestLoved(userId, ids) {
+    if (!userId || !ids.length) return new Map();
+    const { rows } = await db.query(
+      `SELECT r.id, l.title, l.rating, 1 - (l.embedding <=> r.embedding) AS similarity
+       FROM books r CROSS JOIN LATERAL (
+         SELECT b.title, b.embedding, ur.rating FROM user_ratings ur JOIN books b ON b.id = ur.book_id
+         WHERE ur.user_id = $1 AND ur.rating >= 4 AND b.embedding IS NOT NULL AND b.id <> r.id
+         ORDER BY b.embedding <=> r.embedding LIMIT 1) l
+       WHERE r.id = ANY($2::int[]) AND r.embedding IS NOT NULL;`,
+      [userId, ids]
+    );
+    return new Map(rows.filter((r) => r.similarity >= CLOSE_TO_LOVED).map((r) => [r.id, { title: shortTitle(r.title), stars: r.rating }]));
+  }
+  const lovedLine = (c) => (c ? `${c.title} (the reader gave it ${c.stars} stars)` : undefined);
+
+  // "like Dune": the books named by title -> their ids (the best-known edition of each)
+  async function idsByTitles(titles) {
+    if (titles === undefined || titles === null) return { ids: [], found: [], missing: [] };
+    if (!Array.isArray(titles) || titles.length > 5) throw new ToolError("similar_to_titles must be a list of up to 5 titles");
+    const found = [], missing = [];
+    for (const t of titles.map((x) => String(x).trim().slice(0, 200)).filter((x) => x.length >= 2)) {
+      const { rows } = await db.query(
+        `SELECT b.id, b.title, b.authors FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id
+         WHERE b.title ILIKE '%' || $1 || '%' AND b.embedding IS NOT NULL
+         ORDER BY (lower(b.title) = lower($1)) DESC, p.ratings_count DESC NULLS LAST, length(b.title) LIMIT 1;`,
+        [t]
+      );
+      if (rows[0]) found.push({ id: rows[0].id, title: rows[0].title, authors: (rows[0].authors || []).slice(0, 1) });
+      else missing.push(t);
+    }
+    return { ids: found.map((b) => b.id), found, missing };
+  }
+
   // ---------- search_books ----------
   async function searchBooks(input, ctx) {
     const query = String(input.query || "").trim().slice(0, 500);
-    const similarTo = checkIds(input.similar_to_book_ids, "similar_to_book_ids", 5);
-    if (!query && !similarTo.length) throw new ToolError("give a query, similar_to_book_ids, or both");
+    const byTitle = await idsByTitles(input.similar_to_titles);
+    const similarTo = [...new Set([...checkIds(input.similar_to_book_ids, "similar_to_book_ids", 5), ...byTitle.ids])].slice(0, 5);
+    if (!query && !similarTo.length) {
+      if (byTitle.missing.length) return { books: [], notInCatalog: byTitle.missing, note: "these titles are not in the BookBridge catalog - say so, and offer to search by description instead" };
+      throw new ToolError("give a query, similar_to_book_ids / similar_to_titles, or both");
+    }
     const genres = checkGenreKeys(input.genres, "genres");
     const notGenres = checkGenreKeys(input.exclude_genres, "exclude_genres");
     const exclude = withSuggested(checkIds(input.exclude_book_ids, "exclude_book_ids", 200), input, ctx);
@@ -261,6 +336,7 @@ module.exports = function chatTools({ db, recommendFor }) {
     if (input.author) where.push(`EXISTS (SELECT 1 FROM unnest(b.authors) a WHERE a ILIKE '%' || ${add(String(input.author))} || '%')`);
     const tagFilter = tagPatterns(input.reader_tags);
     if (tagFilter.length) where.push(`EXISTS (SELECT 1 FROM book_reader_tags t WHERE t.book_id = b.id AND t.tag ILIKE ANY(${add(tagFilter)}::text[]))`);
+    for (const h of ctx.hashtags || []) where.push(`EXISTS (SELECT 1 FROM book_reader_tags t WHERE t.book_id = b.id AND t.tag ILIKE ${add(`%${h.replace(/-/g, " ")}%`)})`);
 
     const select = `SELECT ${BOOK_COLUMNS}, 1 - (b.embedding <=> $1::vector) AS similarity
        FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id`;
@@ -295,15 +371,66 @@ module.exports = function chatTools({ db, recommendFor }) {
       books = books.filter((b) => availability.has(b.id));
     }
     books = addMatch(books.slice(0, count), (b) => b.similarity);
-    const tags = await tagsOf(books.map((b) => b.id));
+    const [tags, loved] = await Promise.all([tagsOf(books.map((b) => b.id)), closestLoved(ctx.user?.id, books.map((b) => b.id))]);
     return {
       books: books.map((b) => bookLine(b, {
         match: b.match, // % of the best result's similarity
         readerTags: tags.get(b.id)?.slice(0, TAGS_IN_LIST),
+        closeToYourFavorite: lovedLine(loved.get(b.id)),
         ...(availability ? { availability: availabilitySummary(availability.get(b.id)) } : {}),
       })),
+      ...(byTitle.found.length ? { similarTo: byTitle.found } : {}), // the books "like X" was matched to - not recommendations
+      ...(byTitle.missing.length ? { notInCatalog: byTitle.missing } : {}),
       ...(library ? { library: library.label, inventorySimulated: true } : {}),
-      note: books.length ? undefined : "nothing matched - try fewer filters or other words",
+      ...(ctx.hashtags?.length ? { hashtags: ctx.hashtags.map((h) => `#${h}`) } : {}),
+      note: books.length ? undefined
+        : ctx.hashtags?.length ? "nothing matched with the reader's hashtags - say so, and suggest fewer or other hashtags"
+        : "nothing matched - try fewer filters or other words",
+    };
+  }
+
+  // ---------- compare_books: "X or Y?" ----------
+  // The same facts for each book, side by side, and how it fits THIS reader. ctx.comparison: the
+  // page shows the books as a table under the answer (chat.js), so the answer itself can stay short.
+  async function compareBooks(input, ctx) {
+    const byTitle = await idsByTitles(input.titles);
+    const ids = [...new Set([...checkIds(input.book_ids, "book_ids", MAX_COMPARE), ...byTitle.ids])].slice(0, MAX_COMPARE);
+    if (byTitle.missing.length && ids.length < 2) return { books: [], notInCatalog: byTitle.missing, note: "not in the BookBridge catalog - say so" };
+    if (ids.length < 2) throw new ToolError(`give 2-${MAX_COMPARE} books: titles or book_ids`);
+    const city = CITIES.includes(input.city) ? input.city : ctx.user?.preferred_city || null;
+    const [{ rows }, peeks, tags, loved, avail] = await Promise.all([
+      db.query(`SELECT ${BOOK_COLUMNS} FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id WHERE b.id = ANY($1::int[]);`, [ids]),
+      peekInfo(db, ids),
+      tagsOf(ids),
+      closestLoved(ctx.user?.id, ids),
+      city ? getAvailability(db, ids, { lat: null, lng: null, radiusKm: null, city, libraryIds: null }) : Promise.resolve(null),
+    ]);
+    if (rows.length < 2) throw new ToolError("these books are not in the catalog - use find_book for their ids");
+    const byId = new Map(rows.map((b) => [b.id, b]));
+    const books = ids.filter((id) => byId.has(id)).map((id) => {
+      const b = byId.get(id);
+      const peek = peeks.get(id);
+      return bookLine(b, {
+        readersRating: peek?.avgRating != null ? `${peek.avgRating} / 5 from ${peek.ratingCount} ratings` : "no ratings yet",
+        readerTags: tags.get(id)?.slice(0, TAGS_IN_LIST),
+        closeToYourFavorite: lovedLine(loved.get(id)),
+        ...(avail ? { availability: availabilitySummary(avail.get(id)) } : {}),
+      });
+    });
+    ctx.comparison = {
+      city,
+      books: books.map((b) => ({
+        id: b.id, pages: b.pages, year: b.year, genres: b.genres.slice(0, 3),
+        rating: peeks.get(b.id)?.avgRating ?? null, ratings: peeks.get(b.id)?.ratingCount ?? 0,
+        tags: (b.readerTags || []).slice(0, 3), lovedLike: loved.get(b.id) || null,
+        available: avail ? Boolean(avail.get(b.id)) : null,
+      })),
+    };
+    return {
+      books,
+      ...(byTitle.missing.length ? { notInCatalog: byTitle.missing } : {}),
+      ...(city ? { city, inventorySimulated: true } : {}),
+      note: "the page shows these facts as a table under your answer - do not repeat them all; say which fits the reader better and why, in 2-4 sentences",
     };
   }
 
@@ -628,13 +755,14 @@ module.exports = function chatTools({ db, recommendFor }) {
       description:
         "Search the BookBridge catalog by meaning: a free-text description of the book the user wants is turned into an embedding and compared with every book's embedding (pgvector). " +
         "Use it for almost every request. Write `query` in ENGLISH, as a short description of the wanted book's content, mood and themes (e.g. \"epic desert planet politics, female protagonist, hopeful tone\") - not as instructions. " +
-        "To find books like ones the user named, call find_book first and pass their ids in similar_to_book_ids (alone, or together with a query to steer). " +
-        "Filters are exact - use them only for hard constraints the user stated. Returns up to 10 books with a short description and a match percent (relative to the best result).",
+        "To find books like ones the user named, pass their titles in similar_to_titles (or ids you already have in similar_to_book_ids), alone or with a query to steer. " +
+        "Filters are exact - use them only for hard constraints the user stated. Returns up to 10 books with a short description, a match percent (relative to the best result) and, when there is one, closeToYourFavorite: the reader's own loved book it is closest to.",
       input_schema: {
         type: "object",
         properties: {
           query: { type: "string", description: "English description of the wanted content, mood, themes, setting, protagonist." },
           similar_to_book_ids: { type: "array", items: { type: "integer" }, maxItems: 5, description: "Catalog ids of books the result should resemble." },
+          similar_to_titles: { type: "array", items: { type: "string" }, maxItems: 5, description: "Titles (in English) of books the result should resemble - \"like Dune\" in ONE call, no find_book first. The result says which catalog book each title matched (similarTo) and which are not in the catalog (notInCatalog)." },
           genres: { type: "array", items: { type: "string", enum: GENRE_KEYS }, description: "Only books in at least one of these genres." },
           exclude_genres: { type: "array", items: { type: "string", enum: GENRE_KEYS }, description: "No books in these genres (e.g. \"not horror\")." },
           max_pages: { type: "integer", minimum: 20 },
@@ -647,6 +775,18 @@ module.exports = function chatTools({ db, recommendFor }) {
           include_suggested: { type: "boolean", description: "true only when the reader asks to see earlier suggestions again (e.g. \"which of those is shortest?\"). Default: they are left out." },
           count: { type: "integer", minimum: 1, maximum: 10, description: "How many books (default 6)." },
           ...libraryProps,
+        },
+      },
+    },
+    {
+      name: "compare_books",
+      description: "Two or three catalog books side by side - pages, year, genres, how readers rate them, readers' tags, which of the reader's loved books each is closest to, and whether it is on the shelf in the reader's city. For \"X or Y?\", \"which should I read first?\", \"how are they different?\" - pass the titles straight away (no find_book first). The page shows the facts as a table under your answer.",
+      input_schema: {
+        type: "object",
+        properties: {
+          titles: { type: "array", items: { type: "string" }, maxItems: MAX_COMPARE, description: "The books' titles in English, as the reader named them." },
+          book_ids: { type: "array", items: { type: "integer" }, maxItems: MAX_COMPARE, description: "Or catalog ids you already have." },
+          city: { type: "string", enum: CITIES, description: "Where to check the shelves (default: the reader's city)." },
         },
       },
     },
@@ -767,6 +907,7 @@ module.exports = function chatTools({ db, recommendFor }) {
 
   const handlers = {
     search_books: searchBooks,
+    compare_books: compareBooks,
     find_book: findBook,
     get_book_details: getBookDetails,
     check_availability: checkAvailability,
@@ -796,6 +937,8 @@ module.exports = function chatTools({ db, recommendFor }) {
       if (!b || !Number.isInteger(b.id)) return;
       const card = { id: b.id };
       if (b.why) card.why = b.why;
+      // a personal reason on the card: "Close to Dune, which you loved" (search_books, compare_books)
+      else if (b.closeToYourFavorite) card.why = `Close to ${b.closeToYourFavorite.replace(/ \(the reader gave.*$/, "")}, which you loved`;
       if (Number.isInteger(b.match)) card.match = b.match;
       if (typeof b.availability === "string" && b.availability.startsWith("available at ")) {
         card.availabilityText = `Available at ${b.availability.slice("available at ".length)}`;
@@ -806,12 +949,15 @@ module.exports = function chatTools({ db, recommendFor }) {
     };
     if (Array.isArray(result.books)) result.books.forEach(collect);
     else collect(result);
+    (result.similarTo || []).forEach((b) => books.push({ id: b.id })); // "like Dune": Dune may be named too
     return { result, books };
   }
 
-  return { definitions, run, embed, getExtractor, saveNote };
+  return { definitions, run, embed, getExtractor, saveNote, tagsOf, popularTags };
 };
 
 module.exports.ToolError = ToolError;
 module.exports.GENRE_KEYS = GENRE_KEYS;
+module.exports.hashtagsIn = hashtagsIn;
+module.exports.slugOf = slugOf;
 module.exports.helpers = { checkIds, withSuggested, cleanNote, fuseRanks }; // for test/chat-tools.test.js

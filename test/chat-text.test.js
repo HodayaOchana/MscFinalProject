@@ -1,7 +1,20 @@
 // The chatbot's answer tidying (server/chat-text.js). Run: npm test
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, OTHER_SCRIPT } = require("../server/chat-text");
+const { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, readerTexts, OTHER_SCRIPT } = require("../server/chat-text");
+
+test("readerTexts keeps the reader's words only - not tool results, app data or app notes", () => {
+  const messages = [
+    { role: "user", content: "Something like Dune" },
+    { role: "assistant", content: [{ type: "text", text: "Here are..." }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "x", content: "{\"books\":[]}" }] },
+    { role: "system", content: "Today: ..." },
+    { role: "user", content: [{ type: "text", text: "add the first one" }, { type: "text", text: "<reader_memory>[]</reader_memory>" }] },
+    { role: "user", content: [{ type: "text", text: "<book_lookup>{}</book_lookup>" }] },
+    { role: "user", content: "(A note from the app, not the reader.) You told the reader..." },
+  ];
+  assert.deepEqual(readerTexts(messages), ["Something like Dune", "add the first one"]);
+});
 
 test("ground keeps books the tools returned and drops the others", () => {
   const seen = new Map([[1, { why: "fits" }], [3, {}]]);

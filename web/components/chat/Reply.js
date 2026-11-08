@@ -8,10 +8,13 @@
 import { Fragment } from "react";
 import Link from "next/link";
 
-// **bold** and *italic* inside a line, and [[book:ID]] -> the book's title as a link
+// **bold** and *italic* inside a line, [[book:ID]] -> the book's title as a link,
+// and [text](/path) -> a link to a page of this site (only here: a path that starts with one /)
 export function Inline({ text, books }) {
-  const parts = text.split(/(\[\[book:\d+\]\]|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g);
+  const parts = text.split(/(\[\[book:\d+\]\]|\[[^[\]]+\]\(\/(?!\/)[^)\s]*\)|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g);
   return parts.map((part, i) => {
+    const page = part.match(/^\[([^[\]]+)\]\((\/(?!\/)[^)\s]*)\)$/);
+    if (page) return <Link key={i} href={page[2]} className="font-bold text-rust underline underline-offset-2 hover:text-rust-dark">{page[1]}</Link>;
     const book = part.match(/^\[\[book:(\d+)\]\]$/);
     if (book) {
       const b = books.get(Number(book[1]));

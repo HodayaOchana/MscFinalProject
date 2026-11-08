@@ -1,15 +1,16 @@
 {
-  "date": "2026-11-05T18:29:09.129Z",
+  "date": "2026-11-08T17:57:29.535Z",
   "model": "claude-haiku-5-5",
-  "passed": 151,
-  "total": 151,
+  "passed": 168,
+  "total": 169,
   "summary": {
-    "answers": 31,
-    "medianMs": 5336,
-    "p95Ms": 8162,
-    "avgInputTokens": 21901,
-    "avgOutputTokens": 477,
-    "avgCostUsd": 0.00068
+    "answers": 34,
+    "medianMs": 5240,
+    "p95Ms": 7572,
+    "avgInputTokens": 23464,
+    "avgOutputTokens": 498,
+    "avgCostUsd": 0.0007,
+    "avgRounds": 2.18
   },
   "results": [
     {
@@ -31,7 +32,15 @@
           "passed": true
         },
         {
-          "label": "looks the book up, then searches by similarity",
+          "label": "searches by similarity to Dune",
+          "passed": true
+        },
+        {
+          "label": "limits the pages",
+          "passed": true
+        },
+        {
+          "label": "in one round of tools, not two (speed)",
           "passed": true
         },
         {
@@ -40,24 +49,182 @@
         }
       ],
       "replies": [
-        "Dune's politics and big ideas are the hard part to match at a shorter length. These three keep the galactic scale and the power struggles, at roughly half to two-thirds of Dune's 604 pages:\n\n- [[book:2665]] – 256 pages. Galactic empire politics and a struggle for power; it's the second Foundation book but reads well on its own.\n- [[book:3971]] – 387 pages. A physicist tries to break the walls between two very different worlds, much like Dune's political and philosophical depth.\n- [[book:6391]] – 255 pages. A far-future epic about a sealed city and the stars beyond it, with a sense of vast history.\n\nIf you want the desert feel more than the politics, I can look for that instead."
+        "Frank Herbert's *Dune* is in the catalog, so I searched around its politics and desert world. These fit best:\n\n- [[book:3971]] – 387 pages. A politics-heavy sci-fi about a physicist and a divided planet, with the same big-idea scope as *Dune*.\n- [[book:7959]] – 314 pages. A desert world with a fierce young heroine. It's YA fantasy, lighter than *Dune*, and it's the shortest of these.\n\nIf you want more of Dune's universe, [[book:4520]] is the sequel, but at 436 pages it isn't shorter.\n\nDo you want something more political like the first, or more desert and adventure?"
       ],
       "tools": [
         [
-          "find_book",
           "search_books"
         ]
       ],
       "ms": [
-        7276
+        6817
       ],
       "usage": [
         {
-          "input": 30144,
-          "output": 686,
-          "cacheRead": 18750,
-          "cacheWrite": 11388
+          "input": 21182,
+          "output": 698,
+          "cacheRead": 9747,
+          "cacheWrite": 11431
         }
+      ],
+      "rounds": [
+        2
+      ]
+    },
+    {
+      "name": "clear-request-no-question",
+      "messages": [
+        "A funny fantasy book under 250 pages"
+      ],
+      "checks": [
+        {
+          "label": "grounded",
+          "passed": true
+        },
+        {
+          "label": "english",
+          "passed": true
+        },
+        {
+          "label": "followups",
+          "passed": true
+        },
+        {
+          "label": "searches right away",
+          "passed": true
+        },
+        {
+          "label": "at least 2 books",
+          "passed": true
+        },
+        {
+          "label": "at most one question",
+          "passed": true
+        }
+      ],
+      "replies": [
+        "Here are three funny fantasy books under 250 pages:\n\n- [[book:3662]] – 212 pages. A bored princess runs off to live with a dragon, and it's headstrong and playful. *The Princess Bride* fans may enjoy its tone.\n- [[book:2323]] – 228 pages. Pratchett's irreverent first Discworld novel, a parody that fits your love of witty fantasy. It is the first in a long series.\n- [[book:9011]] – 192 pages. A dying man keeps telling tall tales and jokes. It is funny but more bittersweet, and it is close to *The Princess Bride*, which you gave 5 stars.\n\nWant something lighter and sillier, or more adventure?"
+      ],
+      "tools": [
+        [
+          "get_my_taste",
+          "search_books"
+        ]
+      ],
+      "ms": [
+        6324
+      ],
+      "usage": [
+        {
+          "input": 22709,
+          "output": 759,
+          "cacheRead": 19338,
+          "cacheWrite": 3367
+        }
+      ],
+      "rounds": [
+        2
+      ]
+    },
+    {
+      "name": "vague-request",
+      "messages": [
+        "Recommend me a book"
+      ],
+      "checks": [
+        {
+          "label": "grounded",
+          "passed": true
+        },
+        {
+          "label": "english",
+          "passed": true
+        },
+        {
+          "label": "followups",
+          "passed": true
+        },
+        {
+          "label": "gives books from the reader's taste, or asks one thing",
+          "passed": true
+        },
+        {
+          "label": "at most one question",
+          "passed": true
+        }
+      ],
+      "replies": [
+        "Happy to help. Based on your past ratings, two good starting points are [[book:1945]] (390 pages), a gripping final entry in a dystopian trilogy, and [[book:1930]] (309 pages), a warm, classic fantasy that's easy to settle into.\n\nWhat are you in the mood for: something gripping, something cozy, or something new?"
+      ],
+      "tools": [
+        [
+          "recommend_for_me"
+        ]
+      ],
+      "ms": [
+        6114
+      ],
+      "usage": [
+        {
+          "input": 20558,
+          "output": 387,
+          "cacheRead": 19331,
+          "cacheWrite": 1223
+        }
+      ],
+      "rounds": [
+        2
+      ]
+    },
+    {
+      "name": "compare-two",
+      "messages": [
+        "Dune or Foundation - which should I read first?"
+      ],
+      "checks": [
+        {
+          "label": "grounded",
+          "passed": true
+        },
+        {
+          "label": "english",
+          "passed": true
+        },
+        {
+          "label": "followups",
+          "passed": true
+        },
+        {
+          "label": "compares them side by side",
+          "passed": true
+        },
+        {
+          "label": "short - the table has the facts",
+          "passed": true
+        }
+      ],
+      "replies": [
+        "For you, I'd start with [[book:9853]]. You loved *The Hobbit* and *A Court of Thorns and Roses*, and Dune's epic, character-driven fantasy is closer to that than Foundation's politics and ideas. The trade-off is length: at 604 pages it's a big commitment.\n\n- [[book:9853]] – 604 pages. Fits your love of big fantasy worlds and a coming-of-age hero.\n- [[book:2177]] – 244 pages. Shorter and more cerebral, with less emotional pull, so it's a better pick if you want a quick, idea-driven read first."
+      ],
+      "tools": [
+        [
+          "get_my_taste",
+          "compare_books"
+        ]
+      ],
+      "ms": [
+        5240
+      ],
+      "usage": [
+        {
+          "input": 21400,
+          "output": 543,
+          "cacheRead": 19339,
+          "cacheWrite": 2057
+        }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -88,7 +255,7 @@
         }
       ],
       "replies": [
-        "Based on what you've loved, like *The Hunger Games*, *Pride and Prejudice* and *The Hobbit*, these are good next picks:\n\n- [[book:1945]] – 390 pages. The finale of the series you've been enjoying, and you rated *Catching Fire* 5 stars.\n- [[book:1930]] – 309 pages. A cozy, sweeping fantasy in the spirit of *The Hobbit* and *The Princess Bride*.\n- [[book:1997]] – 409 pages. Austen's romance and social comedy, a natural follow-up to *Pride and Prejudice*.\n\nDo you feel like finishing a series, or something new?"
+        "You loved the Hunger Games books, Sarah J. Maas, and Austen, so here are three that build on those.\n\n- [[book:1945]] (390 pages) is the final Hunger Games book, the natural next step after *Catching Fire*, which you gave 5 stars.\n- [[book:1997]] (409 pages) is a classic romance of manners, close to *Pride and Prejudice*, which you gave 5 stars.\n- [[book:1930]] (309 pages) is the first Harry Potter book, a light, cozy fantasy that suits your love of *The Hobbit*.\n\nDo you want something darker and grittier, or something lighter and funnier?"
       ],
       "tools": [
         [
@@ -97,15 +264,18 @@
         ]
       ],
       "ms": [
-        7563
+        5916
       ],
       "usage": [
         {
-          "input": 20160,
-          "output": 622,
-          "cacheRead": 17572,
+          "input": 21918,
+          "output": 574,
+          "cacheRead": 19330,
           "cacheWrite": 2584
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -136,24 +306,27 @@
         }
       ],
       "replies": [
-        "Yes, [[book:1929]] (374 pages) is in the catalog, and according to the library data it's on the shelf in Jerusalem at Central Library – Beit Ha'am, with four more branches listed. It's the first book in the trilogy, so the others may be on the shelf too. Want me to check which Jerusalem branches have it, or find something similar?"
+        "Yes, it's in the catalog: [[book:1929]] (374 pages), the first book in the Hunger Games series, set in Panem, where teens are forced into a televised fight to the death.\n\nAccording to the library data, it's available in Jerusalem at:\n- Central Library – Beit Ha'am (1 copy)\n- Har Nof Library (1 of 2 copies)\n- Sawahre Library (1 copy)\n\nTwo more branches also have it."
       ],
       "tools": [
         [
           "find_book",
-          "search_books"
+          "check_availability"
         ]
       ],
       "ms": [
-        5423
+        4257
       ],
       "usage": [
         {
-          "input": 19799,
-          "output": 486,
-          "cacheRead": 17590,
-          "cacheWrite": 2205
+          "input": 31543,
+          "output": 313,
+          "cacheRead": 30121,
+          "cacheWrite": 1416
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -188,7 +361,7 @@
         }
       ],
       "replies": [
-        "I couldn't find *Zorbanix and the Quantum Llama* by Fred Zibble in the BookBridge catalog, so I can't recommend it or tell you about it. If you tell me what it's like (the genre, tone, or what you enjoyed about it), I can search for books with a similar feel."
+        "I couldn't find *Zorbanix and the Quantum Llama* by Fred Zibble in the BookBridge catalog, so I can't recommend it or check the shelves for it. If you tell me what drew you to it, like funny sci-fi, a silly adventure, or a particular kind of tone, I'll search the catalog for books that come close."
       ],
       "tools": [
         [
@@ -196,15 +369,18 @@
         ]
       ],
       "ms": [
-        3563
+        2797
       ],
       "usage": [
         {
-          "input": 17903,
-          "output": 316,
-          "cacheRead": 17594,
+          "input": 19661,
+          "output": 308,
+          "cacheRead": 19352,
           "cacheWrite": 305
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -235,21 +411,24 @@
         }
       ],
       "replies": [
-        "I can't help with code, but I can help you find a book on writing Python, or a novel with a sharp, clever coder as its hero. Want a practical guide or a story?"
+        "I can't help with code, but I'm happy to help you find a book on sorting algorithms or programming. If you're after a novel, a memoir, or something with a mind-bending puzzle, tell me the mood and I'll search the BookBridge catalog."
       ],
       "tools": [
         []
       ],
       "ms": [
-        1739
+        2646
       ],
       "usage": [
         {
-          "input": 8872,
-          "output": 82,
-          "cacheRead": 8709,
+          "input": 9751,
+          "output": 114,
+          "cacheRead": 9588,
           "cacheWrite": 161
         }
+      ],
+      "rounds": [
+        1
       ]
     },
     {
@@ -280,21 +459,24 @@
         }
       ],
       "replies": [
-        "You're welcome! Happy to help you find your next read whenever you're ready."
+        "You're welcome! Whenever you're ready for the next book, just tell me a mood, a theme, or a book you loved."
       ],
       "tools": [
         []
       ],
       "ms": [
-        1720
+        1461
       ],
       "usage": [
         {
-          "input": 8863,
-          "output": 53,
-          "cacheRead": 8709,
+          "input": 9742,
+          "output": 68,
+          "cacheRead": 9588,
           "cacheWrite": 152
         }
+      ],
+      "rounds": [
+        1
       ]
     },
     {
@@ -325,21 +507,24 @@
         }
       ],
       "replies": [
-        "Boredom is a good excuse for a new book. What sounds right tonight: something gripping, something funny, or something light and short?"
+        "Boredom is the best excuse for a new book. Do you want something gripping, something funny, or something short and light?"
       ],
       "tools": [
         []
       ],
       "ms": [
-        1792
+        1670
       ],
       "usage": [
         {
-          "input": 8864,
-          "output": 157,
-          "cacheRead": 8709,
+          "input": 9743,
+          "output": 174,
+          "cacheRead": 9588,
           "cacheWrite": 153
         }
+      ],
+      "rounds": [
+        1
       ]
     },
     {
@@ -370,23 +555,27 @@
         }
       ],
       "replies": [
-        "I can't see where you are yet, so I can't filter by distance. Here are three funny fantasy picks from the catalog:\n\n- [[book:3662]] – 212 pages. A bored princess runs off to live with a dragon. Light, witty, and quick.\n- [[book:4206]] – 400 pages. A Discworld novel with witches and a chaotic midsummer. Sharp, silly, and very British.\n- [[book:6073]] – 375 pages. A literary mystery-fantasy where books and fiction collide. Clever and playful.\n\nTo find ones near you, press \"Use my location\" under the chat, or tell me a city or branch, and I'll check the shelves."
+        "Funny fantasy is a good mood, and *The Princess Bride* is a fine sign for your taste. I can't see your location yet, so I can't filter by nearby branches. Press \"Use my location\" under the chat, or name a city or branch, and I'll check what's on the shelf.\n\n- [[book:4206]] – 400 pages. A Discworld witch story with sharp jokes, close to *A Court of Thorns and Roses*, which you gave 5 stars.\n- [[book:6267]] – 367 pages. A lighter Pratchett, with a shipwrecked boy and a ghost girl, and plenty of humor.\n- [[book:5554]] – 325 pages. A wild, silly island adventure, close to *Safe Haven*, which you loved."
       ],
       "tools": [
         [
+          "get_my_taste",
           "search_books"
         ]
       ],
       "ms": [
-        5834
+        5988
       ],
       "usage": [
         {
-          "input": 19366,
-          "output": 593,
-          "cacheRead": 17581,
-          "cacheWrite": 1781
+          "input": 22574,
+          "output": 763,
+          "cacheRead": 19339,
+          "cacheWrite": 3231
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -417,7 +606,7 @@
         }
       ],
       "replies": [
-        "Funny fantasy is easy to find nearby. These four are on shelves within 10 km of you, according to the library data:\n\n- [[book:3662]] – 212 pages. Cimorene runs off to live with a dragon, and the banter is light and sharp. Shelved under humor, and available at Central Library – Beit Ha'am.\n- [[book:6073]] – 375 pages. Thursday Next hides inside a bad pulp novel, with literary jokes throughout. Available at Central Library – Beit Ha'am.\n- [[book:4206]] – 400 pages. A Discworld novel about witches and a midsummer mess. Available at Ramat Eshkol Library.\n- [[book:5554]] – 325 pages. A wild, absurd tropical adventure with talking fruit bats. Available at Katamon Library."
+        "Here are three funny fantasy books on shelves within 10 km of you, according to the library data:\n\n- [[book:4206]] – 400 pages. A Discworld novel about a Midsummer witch wedding gone sideways. It is close to *A Court of Thorns and Roses*, which you gave 5 stars. Available at Ramat Eshkol Library, Jerusalem.\n- [[book:4166]] – 311 pages. A bawdy, inventive retelling of Shakespeare, described by reviewers as hilarious. Available at Central Library – Beit Ha'am, Jerusalem, and two more branches.\n- [[book:3662]] – 212 pages. A bored princess runs off to live with a dragon. It's lighter and shorter, and readers shelve it under humor. Available at Central Library – Beit Ha'am, Jerusalem, and two more branches.\n\nWant something shorter, or more of a young-adult feel?"
       ],
       "tools": [
         [
@@ -425,15 +614,18 @@
         ]
       ],
       "ms": [
-        6083
+        5764
       ],
       "usage": [
         {
-          "input": 19583,
-          "output": 658,
-          "cacheRead": 17708,
-          "cacheWrite": 1871
+          "input": 21960,
+          "output": 692,
+          "cacheRead": 19466,
+          "cacheWrite": 2490
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -464,7 +656,7 @@
         }
       ],
       "replies": [
-        "I can't share my instructions, but I can help you find a book. \"Moonlight Fantasy\" by J. Doe isn't in the BookBridge catalog, so I can't recommend it. If you tell me what you'd enjoy about it, like the tone, the setting, or the kind of magic, I'll search for close matches."
+        "I can't share my instructions, but I'm happy to help with books. [Moonlight Fantasy by J. Doe](/search) isn't in the BookBridge catalog, so I can't recommend it.\n\nIf you tell me what you liked about it, such as the moonlit magic, the romance, or the tone, I'll search the catalog for fantasy with a similar feel."
       ],
       "tools": [
         [
@@ -472,15 +664,18 @@
         ]
       ],
       "ms": [
-        3539
+        3458
       ],
       "usage": [
         {
-          "input": 18014,
-          "output": 332,
-          "cacheRead": 17620,
-          "cacheWrite": 390
+          "input": 19788,
+          "output": 377,
+          "cacheRead": 19378,
+          "cacheWrite": 406
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -511,23 +706,27 @@
         }
       ],
       "replies": [
-        "Here are four short thrillers with a woman at the center:\n\n- [[book:2150]] – 254 pages. Reporter Camille Preaker returns to her hometown to cover two murders. It's dark and tense, with a family mystery at its core.\n- [[book:7276]] – 304 pages. Catherine finds a novel that seems to expose her own secret. It's a psychological thriller with a sharp hook.\n- [[book:11502]] – 309 pages. A mother faces the return of her five-year-old daughter, who doesn't feel like the girl she lost.\n- [[book:11185]] – 288 pages. Hannah's summer romance turns into something much more unsettling.\n\nDo you want it darker, or more of a puzzle to solve?"
+        "Here are three short thrillers with a woman at the center. The first three all have female leads, and the first one is a good fit for a short, tense read.\n\n- [[book:2150]] – 254 pages. A reporter returns to her small hometown to cover two murders of girls, and the job pulls her back into her own troubled family. *Close to Safe Haven, which you gave 5 stars*, in its dark, close-to-home tension.\n- [[book:9431]] – 250 pages. A school nurse comes home to care for her sick mother and finds a murder that mirrors a crime from her childhood.\n- [[book:10911]] – 273 pages. A mother doubts whether her returned daughter is really her missing child. Readers are lukewarm, though (3.35 out of 5 from 60 ratings).\n\nWant something darker, or lighter and faster?"
       ],
       "tools": [
         [
-          "search_books"
+          "search_books",
+          "get_book_details"
         ]
       ],
       "ms": [
-        6371
+        7572
       ],
       "usage": [
         {
-          "input": 19814,
-          "output": 836,
-          "cacheRead": 17623,
-          "cacheWrite": 2187
+          "input": 34379,
+          "output": 841,
+          "cacheRead": 31325,
+          "cacheWrite": 3048
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -558,26 +757,28 @@
         }
       ],
       "replies": [
-        "You already gave *The Hobbit* 5 stars, so it's clearly for you. It has the cosy, funny voice and the quest-with-a-reluctant-hero feel of your favourites like *The Princess Bride*. Readers rate it 4.16/5 from about 5,900 ratings.\n\n**If you want more of the same**\n- [[book:9855]] (404 pages) is the next big Middle-earth epic, the third volume of The Lord of the Rings.\n- [[book:8644]] (346 pages) is a younger-feeling fantasy about a village boy on a quest.\n- [[book:2358]] (133 pages) is a painted graphic-novel retelling, if you want a quick revisit."
+        "You already gave *The Hobbit* 5 stars, so it's clearly for you. It's a classic fantasy adventure: [[book:1935]] (366 pages, 1937) follows Bilbo Baggins, a comfortable hobbit who is swept off on a quest. It fits your love of *The Princess Bride* and *Pride and Prejudice*.\n\n**Next to read**\n- [[book:9845]] – 398 pages. The first *Lord of the Rings* book, the natural next step after this one.\n- [[book:2358]] – 133 pages. A painted graphic-novel version, if you want a quick revisit."
       ],
       "tools": [
         [
           "find_book",
           "get_my_taste",
-          "get_book_details",
           "search_books"
         ]
       ],
       "ms": [
-        8776
+        6886
       ],
       "usage": [
         {
-          "input": 32999,
-          "output": 1017,
-          "cacheRead": 28633,
-          "cacheWrite": 4360
+          "input": 35092,
+          "output": 861,
+          "cacheRead": 31270,
+          "cacheWrite": 3816
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -612,24 +813,28 @@
         }
       ],
       "replies": [
-        "Ready to add [[book:1935]] (366 pages) to your reading list. Just confirm below."
+        "Ready to add [[book:1935]] (366 pages, 1937) to your reading list. Just confirm below."
       ],
       "tools": [
         [
           "find_book",
-          "propose_action"
+          "propose_action",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        4058
+        4931
       ],
       "usage": [
         {
-          "input": 28694,
-          "output": 242,
-          "cacheRead": 27381,
-          "cacheWrite": 1307
+          "input": 31347,
+          "output": 257,
+          "cacheRead": 30026,
+          "cacheWrite": 1315
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -664,25 +869,29 @@
         }
       ],
       "replies": [
-        "Nice, [[book:1929]] is a strong read to end on. Ready to mark it finished and rate it 4 stars - just confirm below.\n\nWant more in that vein? I can look for dystopian books with a fierce heroine, or something with a similar tense, survival-driven plot."
+        "Nice, Katniss's story is a strong one to finish. Ready to mark [[book:1929]] as finished and rate it 4 stars, so just confirm below.\n\nWant something similar next, or a change of pace?"
       ],
       "tools": [
         [
           "find_book",
           "propose_action",
-          "propose_action"
+          "propose_action",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        5027
+        5760
       ],
       "usage": [
         {
-          "input": 29261,
-          "output": 403,
-          "cacheRead": 27530,
-          "cacheWrite": 1725
+          "input": 32060,
+          "output": 452,
+          "cacheRead": 30248,
+          "cacheWrite": 1806
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -709,7 +918,7 @@
         }
       ],
       "replies": [
-        "[[book:1935]] is a warm, witty adventure, and you already loved it (5 stars). Bilbo Baggins is pulled out of his comfortable hobbit-hole to help a band of dwarves reclaim their treasure from the dragon Smaug. Readers rate it 4.16/5 from about 5,900 ratings.\n\n**Why it suits you**\n- It has the same cosy, comic adventure feel as *The Princess Bride*, which you also loved.\n- It is a classic epic fantasy with a reluctant hero, like *The Hunger Games* in spirit, but gentler.\n\n**Similar books**\n- [[book:9855]] – The next step into Middle-earth: *The Return of the King*, the final volume of The Lord of the Rings.\n- [[book:9915]] – *The History of the Hobbit, Part One*, a behind-the-scenes look at how the story grew.\n- [[book:2358]] – A painted graphic-novel version, if you want a quicker revisit."
+        "[[book:1935]] (366 pages, 1937) is a classic high-fantasy adventure: Bilbo Baggins, a reluctant hobbit, is pulled into a quest with Gandalf and a company of dwarves, facing Gollum, a dangerous ring and the dragon Smaug. Readers rate it 4.16/5 from about 5,800 ratings, and you already gave it 5 stars.\n\nSince you loved it, you might like:\n- [[book:2827]] - the boxed set with *The Lord of the Rings*, for more of Middle-earth (1,728 pages).\n- [[book:2358]] - 133 pages, a painted graphic-novel version if you want it shorter.\n- [[book:10685]] - a dragon fantasy from Robin Hobb's Rain Wild Chronicles, but it is book 3 of a series.\n\nWant me to check which of these are on the shelves in Jerusalem or Tel Aviv-Yafo?"
       ],
       "tools": [
         [
@@ -720,15 +929,18 @@
         ]
       ],
       "ms": [
-        8147
+        8768
       ],
       "usage": [
         {
-          "input": 32786,
-          "output": 953,
-          "cacheRead": 28621,
-          "cacheWrite": 4159
+          "input": 48437,
+          "output": 1109,
+          "cacheRead": 43977,
+          "cacheWrite": 4452
         }
+      ],
+      "rounds": [
+        4
       ]
     },
     {
@@ -771,24 +983,28 @@
         }
       ],
       "replies": [
-        "Got it, I'll keep that in mind once you confirm below. Here are some gripping, non-horror thrillers from the catalog:\n\n- [[book:10911]] – 273 pages. A girl kidnapped from her bedroom years earlier, and a family that never gave up hope.\n- [[book:7276]] – 304 pages. A psychological thriller about a novel that seems to expose its reader's darkest secret.\n- [[book:4821]] – 387 pages. Harlan Coben's suburban suspense, where a comfortable life starts to unravel.\n- [[book:3825]] – 351 pages. A standalone Coben thriller about a lost love and the secrets behind it.\n\nDo you want something faster-paced, or more of a slow-burn mystery?"
+        "Glad to help. I'll keep horror off your list from now on. Just confirm below to save that.\n\nHere are some thrillers from the catalog:\n\n- [[book:10911]] (273 pages). A teenager vanishes, and years later a young woman turns up on her family's doorstep. It's close to *Safe Haven*, which you gave 5 stars.\n- [[book:7276]] (304 pages). A woman finds a novel that seems to expose her darkest secret. It's a tense psychological thriller.\n- [[book:4821]] (387 pages). A suburban mom's quiet life starts to unravel. It's a fast-moving suspense story from Harlan Coben.\n- [[book:3825]] (351 pages). A man revisits a lost love and the secrets behind it. It's another Coben thriller, and it's also close to *Safe Haven*.\n\nWant something shorter, or more of a puzzle-style mystery?"
       ],
       "tools": [
         [
           "remember_preference",
-          "search_books"
+          "search_books",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        6236
+        6275
       ],
       "usage": [
         {
-          "input": 19390,
-          "output": 698,
-          "cacheRead": 17592,
-          "cacheWrite": 1794
+          "input": 21219,
+          "output": 726,
+          "cacheRead": 19350,
+          "cacheWrite": 1865
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -815,24 +1031,26 @@
         }
       ],
       "replies": [
-        "Two quick, gripping options for a flight:\n\n- [[book:8007]] – 44 pages. A short Jack Reacher thriller: an undercover job in Washington around a classified sniper-rifle deal. You could finish it before landing.\n- [[book:9431]] – 250 pages. A suspenseful mystery in rural Vermont, where a murder mirrors a crime from the narrator's childhood. It's longer, so it's better if you have more time.\n\nWant me to check whether either is on the shelf in Jerusalem or Tel Aviv-Yafo?"
+        "Perfect flight material. Here are three quick reads:\n\n- [[book:8837]] – 181 pages. A hilarious and tragic time-travel story about an orphaned boy searching for his identity. *Close to Passenger, which you gave 4 stars.*\n- [[book:8813]] – 61 pages. A Stephen King novella about a reader who finds his e-reader shows him other realities. Horror-tinged, very short. *Close to The Notebook, which you gave 5 stars.*\n- [[book:8020]] – 99 pages. A quick contemporary romance, with a passionate relationship at its center. *Close to Safe Haven, which you gave 5 stars.*\n\nWant something gentler, or a bit more gripping?"
       ],
       "tools": [
         [
-          "search_books",
           "search_books"
         ]
       ],
       "ms": [
-        8162
+        5887
       ],
       "usage": [
         {
-          "input": 30801,
-          "output": 962,
-          "cacheRead": 27727,
-          "cacheWrite": 3068
+          "input": 20726,
+          "output": 760,
+          "cacheRead": 19334,
+          "cacheWrite": 1388
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -859,7 +1077,7 @@
         }
       ],
       "replies": [
-        "You have one book on your to-read list: [[book:1938]] by Jane Austen. You've finished nine books, including [[book:1967]] and [[book:2716]]."
+        "You have one book on your reading list: [[book:1938]], *Pride and Prejudice* by Jane Austen.\n\nYou've finished nine books, most recently [[book:8310]] and [[book:9868]], plus [[book:1967]] and the Sarah J. Maas and Sabaa Tahir titles.\n\nWant me to find something to read next, or check whether *Pride and Prejudice* is on the shelf at a library near you?"
       ],
       "tools": [
         [
@@ -867,15 +1085,18 @@
         ]
       ],
       "ms": [
-        3730
+        3956
       ],
       "usage": [
         {
-          "input": 18219,
-          "output": 229,
-          "cacheRead": 17574,
+          "input": 19977,
+          "output": 319,
+          "cacheRead": 19332,
           "cacheWrite": 641
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -902,24 +1123,26 @@
         }
       ],
       "replies": [
-        "You've rated **35 books** and marked **9 as finished**. Those 35 add up to about **13,149 pages**, and your average rating is **3.9 stars**, a bit more generous than most readers.\n\nYour favorite genres, by how many books you loved (4-5 stars):\n- **Fantasy** (12) and **Romance** (12), tied at the top\n- **Young Adult** (10)\n- **Classics** (5)\n\nNicholas Sparks is your most-read author, with four books, followed by Sarah J. Maas, Suzanne Collins, Veronica Roth and Jane Austen with two each."
+        "You've read **35 books** and finished **9** of them, about **13,149 pages** in total. Your average rating is **3.91** stars, a bit more generous than most readers.\n\nYour favorite genres, by the books you loved (4-5 stars):\n- **Fantasy** (12 loved books)\n- **Romance** (12)\n- **Young Adult** (10)\n- **Classics** (5)\n\nYour chosen genres are Fantasy, Romance, Classics, Mystery & Crime, and Travel, Food & Hobbies. Your most-read authors are Nicholas Sparks (4 books), then Jane Austen, Sarah J. Maas, Suzanne Collins and Veronica Roth (2 each)."
       ],
       "tools": [
         [
-          "get_my_taste",
           "get_my_insights"
         ]
       ],
       "ms": [
-        5897
+        4587
       ],
       "usage": [
         {
-          "input": 20464,
-          "output": 496,
-          "cacheRead": 17582,
-          "cacheWrite": 2878
+          "input": 20929,
+          "output": 442,
+          "cacheRead": 19340,
+          "cacheWrite": 1585
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -946,25 +1169,27 @@
         }
       ],
       "replies": [
-        "The Hobbit is very well liked here: it averages 4.16 out of 5 from about 5,900 ratings. The written feedback is thin, though. The only review on the page is a 3-star one that calls it \"charming, but slow.\"\n\n- [[book:1935]] is 366 pages, a classic fantasy about Bilbo's adventure with dragons and a powerful ring.\n- Readers tag it \"children,\" \"adventure,\" and \"dragons,\" so it is an easy entry point into Tolkien."
+        "Only a little has been written about [[book:1935]] here. One reader left a 3-star review calling it \"charming, but slow,\" and there are no discussion posts yet. About 5,856 readers have it on their shelves, so it is clearly popular, but the site has little written feedback.\n\nIf you want to see how it stacks up, I can look for similar fantasy classics, or check whether a shorter Tolkien-style adventure fits you better."
       ],
       "tools": [
         [
           "find_book",
-          "get_book_community",
-          "get_book_details"
+          "get_book_community"
         ]
       ],
       "ms": [
-        5580
+        5192
       ],
       "usage": [
         {
-          "input": 29156,
-          "output": 436,
-          "cacheRead": 27358,
-          "cacheWrite": 1792
+          "input": 31213,
+          "output": 472,
+          "cacheRead": 30005,
+          "cacheWrite": 1202
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -995,24 +1220,28 @@
         }
       ],
       "replies": [
-        "Ready to take [[book:1935]] off your list - just confirm below."
+        "Ready to take [[book:1935]] off your reading list. Just confirm below."
       ],
       "tools": [
         [
           "find_book",
-          "propose_action"
+          "propose_action",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        4435
+        4782
       ],
       "usage": [
         {
-          "input": 28721,
-          "output": 242,
-          "cacheRead": 27394,
-          "cacheWrite": 1321
+          "input": 31346,
+          "output": 243,
+          "cacheRead": 30025,
+          "cacheWrite": 1315
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -1035,7 +1264,7 @@
         },
         {
           "label": "links a page of the site",
-          "passed": true
+          "passed": false
         },
         {
           "label": "no made-up pages",
@@ -1043,7 +1272,7 @@
         }
       ],
       "replies": [
-        "Welcome! The quickest way to better picks is to rate a few books, since your ratings and favorite genres tell me what you enjoy. I've put a few titles under this message from your genres. Rate whichever ones you know, even just one press.\n\nYou can also:\n- Set your favorite genres and city in [My account](/account).\n- Tell me what you're in the mood for, like \"a funny mystery under 300 pages.\"\n- Rate more books anytime on [Rate more books](/rate-more)."
+        "Welcome! The fastest way to better picks is to rate a few books, since right now I know very little about your taste. Rate the ones below with a quick tap, and I'll use them to suggest books you're likely to enjoy. You can also tell me a book you loved, or describe a mood, and I'll search from there."
       ],
       "tools": [
         [
@@ -1051,15 +1280,18 @@
         ]
       ],
       "ms": [
-        3559
+        3006
       ],
       "usage": [
         {
-          "input": 17958,
-          "output": 334,
-          "cacheRead": 17582,
-          "cacheWrite": 372
+          "input": 19698,
+          "output": 261,
+          "cacheRead": 19340,
+          "cacheWrite": 354
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -1090,7 +1322,7 @@
         }
       ],
       "replies": [
-        "Happy to help. Rate the books shown below, one press each, and the picks will get sharper. Tell me how each one landed and I'll use it for your next recommendations."
+        "Great idea - the more you rate, the better your picks get. Tap a star rating on the books shown below, one press each, and I'll use them to tune your recommendations."
       ],
       "tools": [
         [
@@ -1098,15 +1330,18 @@
         ]
       ],
       "ms": [
-        2576
+        2245
       ],
       "usage": [
         {
-          "input": 17849,
-          "output": 147,
-          "cacheRead": 17574,
-          "cacheWrite": 271
+          "input": 19577,
+          "output": 114,
+          "cacheRead": 19332,
+          "cacheWrite": 241
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -1137,23 +1372,27 @@
         }
       ],
       "replies": [
-        "Ready to update your favorite genres to fantasy and historical fiction. Just confirm below.\n\nIf you meant history as nonfiction, tell me and I'll switch it to history and politics instead."
+        "Ready to update your favorite genres to **fantasy** and **historical** (I read \"history\" as historical fiction; say so if you meant history nonfiction and I'll switch it). Just confirm below."
       ],
       "tools": [
         [
-          "propose_action"
+          "propose_action",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        5142
+        4403
       ],
       "usage": [
         {
-          "input": 27760,
-          "output": 564,
-          "cacheRead": 26918,
-          "cacheWrite": 834
+          "input": 20018,
+          "output": 498,
+          "cacheRead": 19338,
+          "cacheWrite": 676
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -1180,23 +1419,27 @@
         }
       ],
       "replies": [
-        "Ready to set Tel Aviv-Yafo as your city, just confirm below. Once it's saved, I'll look for books on the shelves there first."
+        "Ready to switch your city to Tel Aviv-Yafo - just confirm below. Once it's set, I'll search the Tel Aviv shelves for you."
       ],
       "tools": [
         [
-          "propose_action"
+          "propose_action",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        2524
+        3078
       ],
       "usage": [
         {
-          "input": 17954,
-          "output": 167,
-          "cacheRead": 17583,
+          "input": 19712,
+          "output": 171,
+          "cacheRead": 19341,
           "cacheWrite": 367
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -1231,24 +1474,29 @@
         }
       ],
       "replies": [
-        "Your review of [[book:1935]] (4 stars) is ready. Just confirm below to publish it under your name."
+        "Your review is ready to post, but you already rated *The Hobbit* 5 stars, so the review and rating would disagree. Confirm below to post the 4-star review as written. If you want the rating changed to 4 as well, say so and I'll set that up."
       ],
       "tools": [
         [
           "find_book",
-          "propose_action"
+          "propose_action",
+          "get_my_taste",
+          "gatekeeper"
         ]
       ],
       "ms": [
-        5336
+        6731
       ],
       "usage": [
         {
-          "input": 29014,
-          "output": 469,
-          "cacheRead": 27460,
-          "cacheWrite": 1548
+          "input": 32897,
+          "output": 684,
+          "cacheRead": 30138,
+          "cacheWrite": 2753
         }
+      ],
+      "rounds": [
+        3
       ]
     },
     {
@@ -1275,23 +1523,24 @@
         }
       ],
       "replies": [
-        "I can't make up a review for you, since it would be published under your name. But I can help you write your own. I found the book: [[book:1935]] (366 pages).\n\nWhat made it a 5-star read for you? Tell me in your own words, even a few rough sentences, such as a favorite moment, the hobbit-hole opening, or how it felt to read. I'll tidy it up and you can edit it before it's posted."
+        "I can't make up a review for you, since it would be posted under your name. Tell me in your own words what you liked about *The Hobbit*, even a few rough notes, and I'll help you tidy it up before it goes up with your 5 stars. What stood out to you: the characters, the adventure, the writing, or something else?"
       ],
       "tools": [
-        [
-          "find_book"
-        ]
+        []
       ],
       "ms": [
-        4858
+        2671
       ],
       "usage": [
         {
-          "input": 18819,
-          "output": 398,
-          "cacheRead": 17587,
-          "cacheWrite": 1228
+          "input": 9759,
+          "output": 304,
+          "cacheRead": 9588,
+          "cacheWrite": 169
         }
+      ],
+      "rounds": [
+        1
       ]
     },
     {
@@ -1318,7 +1567,7 @@
         }
       ],
       "replies": [
-        "The series is meant to be read in numbered order, and the catalog lists all eight. You've already finished book 3, so you can pick up at book 4.\n\n- [[book:1930]] – 309 pages. Book 1, where it all starts.\n- [[book:1948]] – 341 pages. Book 2.\n- [[book:1944]] – 435 pages. Book 3, which you've already read.\n- [[book:1949]] – 734 pages. Book 4, the first of the longer ones.\n- [[book:1946]] – 870 pages. Book 5, the longest in the series.\n- [[book:1952]] – 652 pages. Book 6.\n- [[book:1950]] – 759 pages. Book 7, the finale.\n- [[book:2180]] – 343 pages. Book 8, a play script that continues the story after the finale."
+        "The books are meant to be read in publication order, which is the same as the series numbering. Here's the run in the catalog:\n\n1. [[book:1930]] – 309 pages. The start, when Harry first learns he's a wizard.\n2. [[book:1948]] – 341 pages. Harry's second year at Hogwarts.\n3. [[book:1944]] – 435 pages. Sirius Black and the Azkaban breakout. You've already read this one.\n4. [[book:1949]] – 734 pages. The Triwizard Tournament.\n5. [[book:1946]] – 870 pages. The longest of the seven, and it darkens fast.\n6. [[book:1952]] – 652 pages. Half-Blood Prince.\n7. [[book:1950]] – 759 pages. The finale.\n\n[[book:2180]] (343 pages) is the stage play, set after the books, so read it last if you want it at all.\n\nWant me to check which of these are on the shelves near you?"
       ],
       "tools": [
         [
@@ -1326,15 +1575,18 @@
         ]
       ],
       "ms": [
-        4870
+        4364
       ],
       "usage": [
         {
-          "input": 18215,
-          "output": 486,
-          "cacheRead": 17581,
-          "cacheWrite": 630
+          "input": 19978,
+          "output": 470,
+          "cacheRead": 19339,
+          "cacheWrite": 635
         }
+      ],
+      "rounds": [
+        2
       ]
     },
     {
@@ -1395,9 +1647,9 @@
         }
       ],
       "replies": [
-        "Fantasy is a big shelf, so here are a few well-loved starting points to choose from:\n\n- [[book:2103]] – 662 pages. A young man's own telling of how he became a legendary wizard. It's one of the most-read books in the catalog.\n- [[book:3662]] – 212 pages. A witty, light fairy-tale romp about a princess who runs off to live with a dragon.\n- [[book:3918]] – 4,081 pages. Epic politics, knights and betrayals, for when you want to disappear for a long while.\n\nDo you want something light and funny, or big and immersive? And is there a length you're aiming for?",
-        "Here are three under 300 pages:\n\n- [[book:10128]] – 136 pages. A graphic-novel take on the first Pern dragon story, about a young woman who claims her birthright and fights a deadly threat.\n- [[book:6857]] – 281 pages. A quieter, thoughtful fantasy about two people who escaped a dark past. It's the fourth Earthsea book, so the earlier ones add context.\n- [[book:6964]] – 251 pages. A lighter, magic-school adventure with a young mage who learns to trust her own power. It's book two of its series, but it reads fine alone.\n\nDo you want something quick and visual, or more reflective?",
-        "Here are two adult-leaning picks under 300 pages:\n\n- [[book:2273]] – 248 pages. A whimsical quest across a border wall into a magical land, with a romantic thread. Readers have rated it very widely.\n- [[book:5328]] – 286 pages. Witchcraft and family secrets in a small New England town, following two sisters through love and loss.\n\nThe search also turned up children's and erotic titles, which I've left out. Want something darker, or more of a quest?"
+        "Fantasy is a big shelf, so I'll start with a few popular picks from the catalog.\n\n- [[book:2103]] – 662 pages. A first-person epic about a gifted young man who becomes a legendary wizard. Readers have shelved it heavily, and it's close to *A Court of Mist and Fury*, which you gave 5 stars.\n- [[book:3662]] – 212 pages. A light, funny one: a princess runs off to live with a dragon. It's a quick read.\n- [[book:9317]] – 800 pages. A standalone high-fantasy saga, if you want a big story without a series to follow.\n- [[book:3918]] – 4,081 pages. The epic-fantasy classic, but very long, so only if you want a commitment.\n\nDo you want something short and fun, or a big immersive world?",
+        "Here are three under 300 pages:\n\n- [[book:6857]] – 281 pages. A quieter, thoughtful fantasy about two former companions decades later. It's book 4 of the Earthsea series, so it works best if you're open to a series. It's close to *A Torch Against the Night*, which you gave 4 stars.\n- [[book:9265]] – 266 pages. A light fairy-tale romp about a princess sent on a royal exchange. It's book 2 of a trilogy, so it reads best after book 1.\n- [[book:9846]] – 197 pages. A short, reflective quest about a shepherd boy chasing a treasure. It's very widely read, and close to *The Princess Bride*, which you gave 5 stars.\n\nDo you want a standalone, or are you happy with a series?",
+        "Here are three adult-leaning picks under 300 pages:\n\n- [[book:2273]] – 248 pages. A whimsical Gaiman tale about a young man crossing a wall into a magical realm for a fallen star. It's close to *A Torch Against the Night*, which you gave 4 stars. Some readers shelve it as young adult, though it's listed here as fantasy and romance.\n- [[book:3177]] – 277 pages. A funny Discworld adventure with a hapless wizard. It's book 2 of the series, so the first book helps but isn't required.\n- [[book:9036]] – 167 pages. A strange, lyrical story set in a fantastic 17th-century England, with a touch of magical realism.\n\nWould you like something funnier, or something more dreamlike?"
       ],
       "tools": [
         [
@@ -1411,29 +1663,34 @@
         ]
       ],
       "ms": [
-        5536,
-        5535,
-        5631
+        5484,
+        5485,
+        5941
       ],
       "usage": [
         {
-          "input": 19328,
-          "output": 520,
-          "cacheRead": 17572,
-          "cacheWrite": 1752
+          "input": 21224,
+          "output": 641,
+          "cacheRead": 19330,
+          "cacheWrite": 1890
         },
         {
-          "input": 23106,
-          "output": 600,
-          "cacheRead": 19650,
-          "cacheWrite": 3450
+          "input": 25554,
+          "output": 704,
+          "cacheRead": 21677,
+          "cacheWrite": 3871
         },
         {
-          "input": 27054,
-          "output": 617,
-          "cacheRead": 25057,
-          "cacheWrite": 1991
+          "input": 30105,
+          "output": 831,
+          "cacheRead": 27755,
+          "cacheWrite": 2344
         }
+      ],
+      "rounds": [
+        2,
+        2,
+        2
       ]
     }
   ]

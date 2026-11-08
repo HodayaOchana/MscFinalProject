@@ -53,9 +53,9 @@ export default function SeriesDetails({ name }) {
                 <span className="text-xs font-bold uppercase tracking-wider text-muted">Book {num(b.number)}</span>
                 <div className="relative">
                   <Cover book={b} className={mine.has(b.id) ? "opacity-80" : ""} />
-                  {b.id === nextId && <span className="absolute right-2 top-2 rounded-full bg-parchment px-2 py-1 text-[11px] font-bold text-rust">UP NEXT</span>}
+                  {b.id === nextId && <span className="absolute right-2 top-2 rounded-md bg-parchment px-2 py-1 text-[11px] font-bold text-rust">UP NEXT</span>}
                   {mine.has(b.id) && (
-                    <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-parchment px-2 py-1 text-[11px] font-bold text-moss-dark">
+                    <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-parchment px-2 py-1 text-[11px] font-bold text-moss-dark">
                       <span aria-hidden="true">★</span> {mine.get(b.id)}<span className="sr-only"> stars, you rated it</span>
                     </span>
                   )}

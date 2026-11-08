@@ -74,7 +74,7 @@ async function getAvailability(pool, bookIds, where) {
   if (!bookIds.length) return new Map();
   const { rows } = await pool.query(
     `WITH libs AS (
-       SELECT id, name, city,
+       SELECT id, name, city, address, lat, lng, source_url,
               CASE WHEN $2::float8 IS NULL THEN NULL ELSE
                 2 * 6371 * asin(sqrt(
                   power(sin(radians(lat - $2::float8) / 2), 2) +
@@ -87,7 +87,7 @@ async function getAvailability(pool, bookIds, where) {
          AND ($4::text IS NULL OR city = $4::text)
          AND ($5::int[] IS NULL OR id = ANY($5::int[]))
      )
-     SELECT i.book_id, l.id AS library_id, l.name, l.city, l.km,
+     SELECT i.book_id, l.id AS library_id, l.name, l.city, l.address, l.lat, l.lng, l.source_url, l.km,
             i.copies_available, i.copies_total, i.source
      FROM library_inventory i
      JOIN libs l ON l.id = i.library_id
@@ -109,6 +109,10 @@ async function getAvailability(pool, bookIds, where) {
         libraryId: r.library_id,
         name: r.name,
         city: r.city,
+        address: r.address,
+        lat: r.lat,
+        lng: r.lng,
+        sourceUrl: r.source_url, // the library's own page: opening hours, borrowing
         distanceKm: r.km === null ? null : Math.round(r.km * 10) / 10,
         copiesAvailable: r.copies_available,
         copiesTotal: r.copies_total,

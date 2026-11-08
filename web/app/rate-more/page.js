@@ -97,7 +97,7 @@ export default function RateMorePage() {
                       <Stars value={stars[b.id] || 0} onChange={(n) => setStars((s) => ({ ...s, [b.id]: n }))} label={`Rate ${b.title}`} />
                     </div>
                     <button type="button" aria-pressed={!stars[b.id]} onClick={() => setStars((s) => ({ ...s, [b.id]: 0 }))}
-                      className={`cursor-pointer self-start rounded-full border px-2.5 py-1 text-xs text-ink-soft ${stars[b.id] ? "border-line-strong bg-cream" : "border-[#B9A88F] bg-sand"}`}>
+                      className={`cursor-pointer self-start rounded-md border px-2.5 py-1 text-xs text-ink-soft ${stars[b.id] ? "border-line-strong bg-cream" : "border-muted bg-sand"}`}>
                       Haven&apos;t read
                     </button>
                   </div>

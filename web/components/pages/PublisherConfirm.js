@@ -52,7 +52,7 @@ export default function PublisherConfirm() {
             </p>
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-bold">Books they listed</span>
-              <p className="m-0 whitespace-pre-wrap break-words rounded-xl bg-cream px-4 py-3 text-[15px]">{req.books}</p>
+              <p className="m-0 whitespace-pre-wrap break-words rounded-md bg-cream px-4 py-3 text-[15px]">{req.books}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button type="button" disabled={busy} onClick={() => decide("confirm")} className="btn btn-primary">Yes, this is our author</button>

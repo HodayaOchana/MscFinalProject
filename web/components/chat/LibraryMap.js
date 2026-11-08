@@ -6,22 +6,23 @@
 // them all with links). The same branches as a list under it (for the keyboard
 // and screen readers, and for anyone who prefers a list).
 //   places = { here: { lat, lng } | null, branches: [{ id, name, city, address, lat, lng, distanceKm?, books: [ids] }] }
-// Leaflet touches `window`, so it is loaded in the browser only (useEffect).
+// "Plan your visit" (in a branch's popup and in the list) opens LibraryVisit: getting there, parking,
+// opening hours. Leaflet touches `window`, so it is loaded in the browser only (useEffect).
 // Its stylesheet is imported by app/chat/page.js.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PinIcon } from "@/components/Icons";
 import { coverLook } from "@/components/Cover";
+import LibraryVisit from "@/components/LibraryVisit";
 
 const RUST = "#A24B25";
-const MOSS = "#556030";
+const MOSS = "#5E5A2B";
 const CREAM = "#FFFBF4";
 const FAN = 3;        // covers shown on a branch
 const COVER_W = 40;
 const COVER_H = 60;
 const STEP = 18;      // px between fanned covers
 const PIN_H = 76;     // marker height: cover + the dot under it
-const directions = (b) => `https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}`;
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // a cover as HTML for Leaflet (the image as a background: a broken link just shows the cover's colour)
@@ -29,7 +30,7 @@ function coverHtml(book, w, h, extra = "") {
   const { url, bg } = coverLook(book);
   const img = url ? `background-image:url('${encodeURI(url).replace(/'/g, "%27")}');background-size:cover;background-position:center;` : "";
   const text = url ? "" : `<span style="display:block;padding:3px;font:600 ${Math.round(w / 6)}px/1.1 serif;color:${CREAM};overflow:hidden">${esc(book.title)}</span>`;
-  return `<div style="width:${w}px;height:${h}px;background-color:${bg};${img}border:2px solid ${CREAM};border-radius:3px;box-shadow:0 3px 8px rgba(43,33,28,.35);overflow:hidden;${extra}">${text}</div>`;
+  return `<div style="width:${w}px;height:${h}px;background-color:${bg};${img}border:2px solid ${CREAM};border-radius:3px;box-shadow:0 3px 8px rgba(60,35,15,.35);overflow:hidden;${extra}">${text}</div>`;
 }
 
 // the marker: the branch's covers fanned out over a small dot (the exact spot)
@@ -41,7 +42,7 @@ function pinHtml(covers, more) {
   const badge = more > 0
     ? `<span style="position:absolute;right:-10px;top:-8px;z-index:4;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#2B211C;color:${CREAM};font:700 11px/20px sans-serif;text-align:center">+${more}</span>`
     : "";
-  const dot = `<span style="position:absolute;left:${width / 2 - 5}px;bottom:0;width:10px;height:10px;border-radius:999px;background:${RUST};border:2px solid ${CREAM};box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>`;
+  const dot = `<span style="position:absolute;left:${width / 2 - 5}px;bottom:0;width:10px;height:10px;border-radius:999px;background:${RUST};border:2px solid ${CREAM};box-shadow:0 1px 3px rgba(60,35,15,.3)"></span>`;
   return { html: `<div style="position:relative;width:${width}px;height:${PIN_H}px">${fan}${badge}${dot}</div>`, width };
 }
 
@@ -49,6 +50,7 @@ export default function LibraryMap({ places, books }) {
   const box = useRef(null);
   const markers = useRef(new Map()); // branch id -> marker, to open it from the list
   const [active, setActive] = useState(null);
+  const [visit, setVisit] = useState(null); // the branch whose "Plan your visit" is open
   const bookOf = new Map(books.map((b) => [b.id, b]));
   const titleOf = new Map(books.map((b) => [b.id, b.title]));
 
@@ -70,7 +72,7 @@ export default function LibraryMap({ places, books }) {
       const points = [];
       if (places.here) {
         // above the covers (a marker, not a circle - circles are drawn under markers)
-        const you = `<span style="display:block;width:18px;height:18px;border-radius:999px;background:${MOSS};border:3px solid ${CREAM};box-shadow:0 0 0 6px rgba(85,96,48,.25),0 2px 6px rgba(0,0,0,.35)"></span>`;
+        const you = `<span style="display:block;width:18px;height:18px;border-radius:999px;background:${MOSS};border:3px solid ${CREAM};box-shadow:0 0 0 6px rgba(85,96,48,.25),0 2px 6px rgba(60,35,15,.35)"></span>`;
         L.marker([places.here.lat, places.here.lng], { icon: L.divIcon({ html: you, className: "", iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 10000, title: "You" })
           .bindTooltip("You", { direction: "top", offset: [0, -10] })
           .addTo(map);
@@ -84,13 +86,15 @@ export default function LibraryMap({ places, books }) {
         const shelf = here.map((book) =>
           `<a href="/books/${book.id}" style="display:flex;width:62px;flex-direction:column;gap:4px;color:#2B211C;text-decoration:none">` +
           `${coverHtml(book, 58, 87)}<span style="font-size:11px;line-height:1.25;font-weight:600">${esc(book.title)}</span></a>`).join("");
+        // the popup as an element, so its button can open "Plan your visit"
+        const popup = document.createElement("div");
+        popup.innerHTML =
+          `<strong style="font-size:14px">${esc(b.name)}</strong><br><span style="font-size:12px;color:#6B5B4E">${esc(b.address)}${b.distanceKm != null ? ` · ${b.distanceKm} km` : ""}</span>` +
+          `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0">${shelf}</div>` +
+          `<button type="button" data-visit style="cursor:pointer;border:0;background:${RUST};color:${CREAM};font:600 13px/1 inherit;padding:8px 12px;border-radius:5px">Plan your visit →</button>`;
+        popup.querySelector("[data-visit]").addEventListener("click", () => setVisit(b));
         const marker = L.marker([b.lat, b.lng], { icon, title: `${b.name}: ${here.length} book${here.length === 1 ? "" : "s"}`, zIndexOffset: here.length * 100 })
-          .bindPopup(
-            `<strong style="font-size:14px">${esc(b.name)}</strong><br><span style="font-size:12px;color:#6B5B4E">${esc(b.address)}${b.distanceKm != null ? ` · ${b.distanceKm} km` : ""}</span>` +
-            `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0">${shelf}</div>` +
-            `<a href="${directions(b)}" target="_blank" rel="noopener" style="font-weight:600;color:${RUST}">Directions ↗</a>`,
-            { minWidth: 160, maxWidth: 260 }
-          )
+          .bindPopup(popup, { minWidth: 160, maxWidth: 260 })
           .on("click", () => setActive(b.id))
           .addTo(map);
         byBranch.set(b.id, marker);
@@ -136,11 +140,12 @@ export default function LibraryMap({ places, books }) {
                   </span>
                 </span>
               </button>
-              <a href={directions(b)} target="_blank" rel="noopener noreferrer" className="ml-6 whitespace-nowrap text-sm font-medium sm:ml-0">Directions ↗</a>
+              <button type="button" onClick={() => setVisit(b)} className="ml-6 cursor-pointer whitespace-nowrap border-0 bg-transparent p-0 text-sm font-medium text-rust hover:text-rust-dark sm:ml-0">Plan your visit →</button>
             </li>
           ))}
         </ul>
       </div>
+      {visit && <LibraryVisit branch={visit} books={visit.books.filter((id) => titleOf.has(id)).map((id) => ({ id, title: titleOf.get(id) }))} onClose={() => setVisit(null)} />}
     </section>
   );
 }

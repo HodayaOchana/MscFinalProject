@@ -8,3 +8,15 @@ export const SearchIcon = () => <svg {...P} width={20} height={20} strokeWidth={
 export const CheckIcon = () => <svg {...P} width={14} height={14} strokeWidth={3}><path d="M5 12l5 5 9-10" /></svg>;
 export const BellIcon = () => <svg {...P} width={20} height={20}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></svg>;
 export const ChatIcon = () => <svg {...P}><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9.5h8M8 12.5h5" /></svg>;
+export const HomeIcon = () => <svg {...P} width={22} height={22}><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" /></svg>;
+export const BooksIcon = () => <svg {...P} width={22} height={22}><path d="M5 4h4v16H5zM10 4h4v16h-4zM16 5l3.5-.8L22 19l-3.5.8z" /></svg>;
+export const ChartIcon = () => <svg {...P} width={22} height={22}><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" /></svg>;
+export const PlayIcon = () => <svg {...P} width={14} height={14} fill="currentColor" stroke="none"><path d="M7 4l13 8-13 8z" /></svg>;
+export const PauseIcon = () => <svg {...P} width={14} height={14} fill="currentColor" stroke="none"><path d="M6 4h4v16H6zM14 4h4v16h-4z" /></svg>;
+export const BasketIcon = () => <svg {...P} width={22} height={22}><path d="M3 10h18l-2 10H5zM8 10l4-6 4 6M9.5 14v2.5M14.5 14v2.5" /></svg>;
+export const FlameIcon = () => <svg {...P} fill="currentColor" stroke="none"><path d="M12 2c1 4 6 6.500 6 12a6 6 0 0 1-12 0c0-2.500 1.200-4 2.400-5.200.3 1.700 1 2.700 2.100 3.200C10.200 8.500 10.500 5 12 2z" /></svg>;
+export const PeopleIcon = () => <svg {...P}><circle cx="9" cy="8" r="3.500" /><path d="M2.500 20c.5-3.800 3-6 6.500-6s6 2.200 6.500 6M16 4.800a3.500 3.500 0 0 1 0 6.400M18 14.500c2 .8 3.200 2.700 3.500 5.500" /></svg>;
+export const OpenBookIcon = () => <svg {...P}><path d="M12 6c-2-1.500-5-2-9-2v15c4 0 7 .5 9 2 2-1.500 5-2 9-2V4c-4 0-7 .5-9 2zM12 6v15" /></svg>;
+export const SparkIcon = () => <svg {...P}><path d="M12 3l1.800 5.200L19 10l-5.200 1.800L12 17l-1.800-5.200L5 10l5.200-1.800zM19 16l.8 2.200L22 19l-2.200.8L19 22l-.8-2.200L16 19l2.200-.8z" /></svg>;
+export const FilesIcon = () => <svg {...P}><path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h7M9 16h7" /></svg>;
+export const ArrowIcon = ({ back }) => <svg {...P} width={20} height={20} strokeWidth={2.2}><path d={back ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} /></svg>;

@@ -13,6 +13,11 @@
  *   GET  /api/admin/uploads                              books uploaded by authors (newest first)
  *   DELETE /api/admin/uploads/:bookId                    remove an uploaded book from the catalog
  *
+ *   GET  /api/admin/reports?status=open|all              reported reviews / discussion messages, one row per item
+ *   POST /api/admin/reports/decide                       { kind, bookId, id, action: hide | keep | restore }
+ *        hide: hidden from readers (the writer still sees it) · keep: shown, the reports closed ·
+ *        restore: an item hidden before is shown again. (Reports: server/social-routes.js)
+ *
  * Authors are verified by their publisher (server/author-verification.js); the team
  * sees the requests, decides book claims, and can remove uploaded books.
  */
@@ -33,12 +38,13 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
   router.get("/summary", wrap(async (req, res) => {
     if (!isAdminEmail(await emailOf(req))) return res.json({ admin: false });
     const count = (sql) => db.query(sql).then((r) => r.rows[0].n).catch((err) => (err.code === "42P01" ? 0 : Promise.reject(err)));
-    const [claims, waiting] = await Promise.all([
+    const [claims, waiting, reports] = await Promise.all([
       count(`SELECT count(*)::int AS n FROM book_claims WHERE status = 'pending';`),
       count(`SELECT count(*)::int AS n FROM author_requests WHERE status = 'pending';`),
+      count(`SELECT count(DISTINCT (kind, book_id, coalesce(review_user_id, 0), coalesce(post_id, 0)))::int AS n FROM book_reports WHERE status = 'open';`).catch(() => 0),
     ]);
-    // the bell counts what needs the TEAM: book claims (author requests wait for the publisher)
-    res.json({ admin: true, pendingBookClaims: claims, waitingForPublisher: waiting });
+    // the bell counts what needs the TEAM: book claims and reported items (author requests wait for the publisher)
+    res.json({ admin: true, pendingBookClaims: claims, waitingForPublisher: waiting, openReports: reports });
   }));
 
   router.use(async (req, res, next) => {
@@ -174,6 +180,58 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
       throw err;
     }
     if (!rowCount) return res.status(404).json({ error: "not an uploaded book" });
+    res.json({ ok: true });
+  }));
+
+  // ---------- reports ----------
+  // One row per reported item: what it says, who wrote it (also behind a pen name), why and how many reported it
+  router.get("/reports", wrap(async (req, res) => {
+    const all = req.query.status === "all";
+    const { rows } = await db.query(
+      `SELECT r.kind, r.book_id, r.review_user_id, r.post_id, b.title,
+              count(DISTINCT r.reporter_id)::int AS readers,
+              array_agg(DISTINCT r.reason) AS reasons,
+              min(r.created_at) AS first_at, max(r.created_at) AS last_at,
+              bool_or(r.status = 'open') AS open,
+              (array_agg(r.status ORDER BY r.created_at DESC))[1] AS status,
+              coalesce(rv.body, p.body) AS body,
+              coalesce(rv.alias, p.alias) AS alias,
+              coalesce(rv.hidden, p.hidden) AS hidden,
+              a.name, a.email
+       FROM book_reports r
+       JOIN books b ON b.id = r.book_id
+       LEFT JOIN book_reviews rv ON r.kind = 'review' AND rv.user_id = r.review_user_id AND rv.book_id = r.book_id
+       LEFT JOIN book_posts p ON r.kind = 'post' AND p.id = r.post_id
+       LEFT JOIN users u ON u.id = coalesce(rv.user_id, p.user_id)
+       LEFT JOIN neon_auth."user" a ON a.id = u.auth_user_id
+       GROUP BY r.kind, r.book_id, r.review_user_id, r.post_id, b.title, rv.body, p.body, rv.alias, p.alias, rv.hidden, p.hidden, a.name, a.email
+       ${all ? "" : "HAVING bool_or(r.status = 'open')"}
+       ORDER BY bool_or(r.status = 'open') DESC, max(r.created_at) DESC
+       LIMIT 200;`
+    ).catch((err) => (err.code === "42P01" || err.code === "42703" ? { rows: [] } : Promise.reject(err))); // db/create-community-extras.js not run
+    res.json({
+      reports: rows.map((r) => ({
+        kind: r.kind, bookId: r.book_id, id: Number(r.kind === "review" ? r.review_user_id : r.post_id),
+        title: r.title, body: r.body, alias: r.alias, hidden: Boolean(r.hidden), deleted: r.body === null,
+        writer: r.name, email: r.email, readers: r.readers, reasons: r.reasons,
+        firstAt: r.first_at, lastAt: r.last_at, status: r.open ? "open" : r.status,
+      })),
+    });
+  }));
+
+  router.post("/reports/decide", wrap(async (req, res) => {
+    const { kind, action } = req.body;
+    if (!["review", "post"].includes(kind)) throw new BadRequest("kind must be review or post");
+    if (!["hide", "keep", "restore"].includes(action)) throw new BadRequest("action must be hide, keep or restore");
+    const bookId = checkId(req.body.bookId);
+    const id = checkId(req.body.id);
+    const hide = action === "hide";
+    const { rowCount } = kind === "review"
+      ? await db.query(`UPDATE book_reviews SET hidden = $3 WHERE user_id = $1 AND book_id = $2;`, [id, bookId, hide])
+      : await db.query(`UPDATE book_posts SET hidden = $2 WHERE id = $1;`, [id, hide]);
+    if (!rowCount) return res.status(404).json({ error: "it was deleted meanwhile" });
+    const same = kind === "review" ? `kind = 'review' AND review_user_id = $1 AND book_id = $2` : `kind = 'post' AND post_id = $1 AND book_id = $2`;
+    await db.query(`UPDATE book_reports SET status = $3, decided_at = now() WHERE ${same};`, [id, bookId, hide ? "hidden" : "dismissed"]);
     res.json({ ok: true });
   }));
 

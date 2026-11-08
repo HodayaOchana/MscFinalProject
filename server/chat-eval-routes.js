@@ -12,6 +12,8 @@
  *   PUT /api/chat-eval/dialogues/:id/rating   { score: 1-5, comment? } - a rater can change it
  *   GET /api/chat-eval/summary                per model: average, how many dialogues reached 3
  *                                             raters, the average per kind, agreement between raters
+ *   GET /api/chat-eval/feedback?days=30       real readers: 👍 / 👎 on answers (reasons, latest misses),
+ *                                             speed (first words / whole answer), why books were hidden
  */
 
 const express = require("express");
@@ -94,6 +96,41 @@ module.exports = function chatEvalRoutes({ db, requireUser, h }) {
       };
     });
     res.json({ goal: GOAL, raters, models });
+  }));
+
+  // ---------- feedback from real readers: 👍 / 👎 on chat answers, and why readers hid books ----------
+  // For the pilot: which answers miss and why (web/app/admin/feedback). Questions and answers, no names or emails.
+  router.get("/feedback", wrap(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const quiet = (p) => p.catch((err) => (err.code === "42P01" || err.code === "42703" ? { rows: [] } : Promise.reject(err))); // migration not run yet
+    const [{ rows: chat }, { rows: chatWhy }, { rows: misses }, { rows: hidden }, { rows: speed }] = await Promise.all([
+      quiet(db.query(
+        `SELECT count(*)::int AS answers,
+                count(*) FILTER (WHERE feedback = 1)::int AS up,
+                count(*) FILTER (WHERE feedback = -1)::int AS down
+         FROM chat_turns WHERE created_at > now() - make_interval(days => $1);`, [days])),
+      quiet(db.query(
+        `SELECT coalesce(feedback_reason, 'no_reason') AS reason, count(*)::int AS n
+         FROM chat_turns WHERE feedback = -1 AND created_at > now() - make_interval(days => $1)
+         GROUP BY 1 ORDER BY 2 DESC;`, [days])),
+      quiet(db.query(
+        `SELECT t.conversation_id AS "conversationId", t.turn, t.user_message AS question, left(t.reply, 400) AS reply,
+                t.feedback_reason AS reason, t.model, t.latency_ms AS ms, t.feedback_at AS at
+         FROM chat_turns t WHERE t.feedback = -1 AND t.created_at > now() - make_interval(days => $1)
+         ORDER BY t.feedback_at DESC LIMIT 30;`, [days])),
+      quiet(db.query(
+        `SELECT coalesce(reason, 'no_reason') AS reason, count(*)::int AS n
+         FROM user_events WHERE type = 'dismissed' AND created_at > now() - make_interval(days => $1)
+         GROUP BY 1 ORDER BY 2 DESC;`, [days])),
+      // how fast it feels: the first words (first_text_ms) and the whole answer, median and p90
+      quiet(db.query(
+        `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY first_text_ms)::int AS "firstMedian",
+                percentile_cont(0.9) WITHIN GROUP (ORDER BY first_text_ms)::int AS "firstP90",
+                percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::int AS "totalMedian",
+                percentile_cont(0.9) WITHIN GROUP (ORDER BY latency_ms)::int AS "totalP90"
+         FROM chat_turns WHERE created_at > now() - make_interval(days => $1);`, [days])),
+    ]);
+    res.json({ days, chat: chat[0] || { answers: 0, up: 0, down: 0 }, chatReasons: chatWhy, misses, notForMe: hidden, speed: speed[0] || null });
   }));
 
   return router;

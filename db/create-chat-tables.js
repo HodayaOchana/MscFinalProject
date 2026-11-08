@@ -30,6 +30,10 @@
  *                              for the recommendation engine (CF/signal-weights.js, chatAsk)
  *     offered_book_id          the book the reader was asked to rate under this answer ("How was
  *                              Dune?") - so a book is offered once, and the offers stay few
+ *     first_text_ms, rounds    how fast it felt: the first words of the answer (ms), and model rounds
+ *     comparison               "X or Y?": the facts compare_books found, the table under the answer
+ *     feedback, feedback_reason, feedback_at   the reader's 👍 (1) / 👎 (-1) on the answer, and for 👎
+ *                              why: wrong_info | not_my_taste | missed_question | too_long
  *
  *   chat_reader_notes - what the chatbot remembers between conversations: reading
  *                preferences the reader stated ("hates horror"). Shown on the chat
@@ -92,6 +96,16 @@ ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS lang text;  -- the reply's langu
 ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS about_book_id int REFERENCES books(id) ON DELETE SET NULL;
 ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS offered_book_id int REFERENCES books(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS chat_turns_about_book ON chat_turns (about_book_id) WHERE about_book_id IS NOT NULL;
+-- 👍 / 👎 under an answer, and why it missed (server/chat.js, POST /api/chat/:id/turns/:turn/feedback)
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS feedback smallint CHECK (feedback IN (-1, 1));
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS feedback_reason text
+  CHECK (feedback_reason IN ('wrong_info', 'not_my_taste', 'missed_question', 'too_long'));
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS feedback_at timestamptz;
+-- speed: when the answer's first words appeared (ms from the message), and how many model rounds it took
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS first_text_ms int;
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS rounds smallint;
+-- "X or Y?": the facts of compare_books, shown as a table under the answer (server/chat-tools.js)
+ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS comparison jsonb;
 CREATE TABLE IF NOT EXISTS chat_reader_notes (
   id          serial PRIMARY KEY,
   user_id     int  NOT NULL REFERENCES users(id) ON DELETE CASCADE,

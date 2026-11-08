@@ -12,7 +12,7 @@ const Arrow = ({ dir }) => (
 );
 
 // onReachEnd: called when the user scrolls to the end (load more books); loading: show a spinner there
-export default function ShelfRow({ id, title, label, subtitle, count, children, titleClass = "text-[28px]", onReachEnd, loading = false }) {
+export default function ShelfRow({ id, title, label, subtitle, count, children, titleClass = "text-2xl md:text-[28px]", onReachEnd, loading = false }) {
   const name = typeof title === "string" ? title : label || ""; // a title with a link still needs plain text for screen readers
   const scroller = useRef(null);
   const [edges, setEdges] = useState({ start: true, end: false });
@@ -44,19 +44,20 @@ export default function ShelfRow({ id, title, label, subtitle, count, children, 
   };
 
   return (
-    <section aria-labelledby={`${id}-title`} className="flex flex-col gap-0">
-      <div className="flex items-end gap-4">
-        <div className="flex min-w-0 flex-col gap-0.5">
+    <section id={id} aria-labelledby={`${id}-title`} className="shelf-row flex scroll-mt-36 flex-col gap-0">
+      <div className="flex flex-col gap-0.5">
+        <div className="flex min-w-0 items-center gap-3">
           <h2 id={`${id}-title`} className={`m-0 font-serif ${titleClass} font-semibold leading-tight`}>{title}</h2>
-          {subtitle && <span className="text-sm text-muted">{subtitle}</span>}
+          <span aria-hidden="true" className="old-rule" />
         </div>
+        {subtitle && <span className="text-sm text-muted">{subtitle}</span>}
       </div>
       <div className="relative -mx-6 md:-mx-10">
         <div ref={scroller} onScroll={update} tabIndex={0} aria-label={`${name} – scroll for more`}
-          className="shelf-scroll flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-px-6 px-6 pb-4 pt-4 outline-none md:scroll-px-10 md:px-10">
+          className="shelf-scroll flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-px-6 px-6 pb-4 pt-5 outline-none md:scroll-px-10 md:px-10">
           {children}
           {loading && (
-            <div aria-label="Loading more" className="flex w-24 shrink-0 items-center justify-center self-start pt-[130px]">
+            <div aria-label="Loading more" className="flex w-24 shrink-0 items-center justify-center self-start pt-[100px]">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-line-strong border-t-rust motion-reduce:animate-none" />
             </div>
           )}
@@ -66,13 +67,13 @@ export default function ShelfRow({ id, title, label, subtitle, count, children, 
         {/* the arrows sit on the covers (vertical middle of a cover), only where there is more to see */}
         {!edges.start && (
           <button type="button" onClick={() => move("left")} aria-label={`${name}: back`}
-            className="absolute left-3 top-[137px] z-20 hidden h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-cream/95 text-ink shadow-[0_6px_18px_rgba(43,33,28,0.25)] hover:bg-parchment md:flex">
+            className="row-arrow absolute left-3 top-[100px] z-30 hidden h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-line bg-cream/95 text-ink shadow-[0_6px_18px_rgba(60,35,15,0.3)] hover:bg-sand md:flex">
             <Arrow dir="left" />
           </button>
         )}
         {!edges.end && (
           <button type="button" onClick={() => move("right")} aria-label={`${name}: more`}
-            className="absolute right-3 top-[137px] z-20 hidden h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-cream/95 text-ink shadow-[0_6px_18px_rgba(43,33,28,0.25)] hover:bg-parchment md:flex">
+            className="row-arrow absolute right-3 top-[100px] z-30 hidden h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-line bg-cream/95 text-ink shadow-[0_6px_18px_rgba(60,35,15,0.3)] hover:bg-sand md:flex">
             <Arrow dir="right" />
           </button>
         )}

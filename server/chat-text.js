@@ -10,6 +10,7 @@
  *                                  (seen: Map id -> info) - the "no hallucinated books" check
  *   suggestedIn(messages)          the ids of the books earlier answers suggested
  *   reasonsIn(reply)               why each listed book fits, from its bullet: id -> one short sentence
+ *   readerTexts(messages)          the reader's own messages (no tool results, no app data)
  *   OTHER_SCRIPT                   a message not in Latin letters (Hebrew, Arabic, Cyrillic...)
  *
  * Pure functions - tested in test/chat-text.test.js.
@@ -76,6 +77,13 @@ const suggestedIn = (messages) => new Set(messages
   .filter((m) => m.role === "assistant" && Array.isArray(m.content))
   .flatMap((m) => m.content.filter((b) => b.type === "text").flatMap((b) => [...b.text.matchAll(BOOK_MARKER)].map((x) => Number(x[1])))));
 
+// What the READER wrote in a conversation, in order - their text only: no tool results, and not the
+// data the app added to a message (<book_lookup>, <reader_memory>) - for the action gatekeeper
+const readerTexts = (messages) => messages
+  .filter((m) => m.role === "user")
+  .map((m) => (typeof m.content === "string" ? m.content : m.content[0]?.type === "text" ? m.content[0].text : null))
+  .filter((t) => t && !t.startsWith("<") && !t.startsWith("(A note from the app"));
+
 // "- [[book:9]] – 328 pages. A chilling look at surveillance." -> 9: "A chilling look at surveillance."
 // The reason a book's card shows: what the answer itself said about it.
 const MAX_REASON = 90;
@@ -95,4 +103,4 @@ function reasonsIn(reply) {
 // Hebrew, Arabic, Cyrillic, Greek, CJK... - a message the bot should still answer in English
 const OTHER_SCRIPT = /[\u0370-\u03ff\u0400-\u04ff\u0590-\u05ff\u0600-\u06ff\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]/;
 
-module.exports = { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, OTHER_SCRIPT, BOOK_MARKER };
+module.exports = { tidyTitles, takeFollowUps, ground, suggestedIn, reasonsIn, readerTexts, OTHER_SCRIPT, BOOK_MARKER };

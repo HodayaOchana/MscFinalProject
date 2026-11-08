@@ -14,9 +14,9 @@ import Cover from "@/components/Cover";
 import { api } from "@/lib/api";
 
 const when = (d) => new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const STATUS = { pending: "bg-sand text-[#5E4A2A]", approved: "bg-moss-soft text-moss-dark", rejected: "bg-rust-soft text-rust-dark" };
+const STATUS = { pending: "bg-sand text-ink-soft", approved: "bg-moss-soft text-moss-dark", rejected: "bg-rust-soft text-rust-dark" };
 const changed = () => window.dispatchEvent(new Event("bb-admin-changed")); // the bell in the header updates at once
-const Badge = ({ status, label }) => <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${STATUS[status] || STATUS.pending}`}>{label || status}</span>;
+const Badge = ({ status, label }) => <span className={`rounded-md px-2.5 py-0.5 text-xs font-bold uppercase ${STATUS[status] || STATUS.pending}`}>{label || status}</span>;
 
 function ClaimCard({ c, onDone }) {
   const [note, setNote] = useState("");
@@ -79,7 +79,7 @@ function UploadCard({ b, onDone }) {
           <span className="ml-auto text-sm text-muted">{when(b.createdAt)}</span>
         </div>
         <p className="m-0 text-sm text-ink-soft">by {b.authors?.join(", ")} · uploaded by <Link href={`/authors/${b.userId}`}>{b.uploader}</Link> ({b.email})</p>
-        <p className="m-0 text-[15px] text-[#3D3029]">{b.description}{b.description.length >= 300 ? "…" : ""}</p>
+        <p className="m-0 text-[15px] text-ink-soft">{b.description}{b.description.length >= 300 ? "…" : ""}</p>
         {error && <p role="alert" className="m-0 text-sm text-rust-dark">{error}</p>}
         <button type="button" disabled={busy} onClick={remove} className="btn btn-outline self-start">Remove from catalog</button>
       </div>
@@ -150,7 +150,10 @@ export default function AuthorRequestsAdmin({ focusId }) {
     <AppShell width="max-w-[900px]">
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <span className="eyebrow">Admin</span>
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <span className="eyebrow">Admin</span>
+            <Link href="/admin/reports" className="text-sm">Reports →</Link>
+          </div>
           <h1 className="m-0 font-serif text-5xl font-semibold">Authors</h1>
           <p className="m-0 text-ink-soft">Authors are confirmed by their publisher through an emailed link. You decide book claims and can remove uploaded books.</p>
         </div>
@@ -158,7 +161,7 @@ export default function AuthorRequestsAdmin({ focusId }) {
           <div role="tablist" aria-label="Admin sections" className="flex flex-wrap gap-2">
             {TABS.map((x) => (
               <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} onClick={() => { if (tab !== x.key) { setData(null); setTab(x.key); } }}
-                className={`cursor-pointer rounded-full border px-4 py-2 text-sm ${tab === x.key ? "border-ink bg-ink text-parchment" : "border-line-strong bg-transparent text-ink hover:border-rust hover:text-rust"}`}>
+                className={`cursor-pointer rounded-md border px-4 py-2 text-sm ${tab === x.key ? "border-ink bg-rust-soft text-rust-dark" : "border-line-strong bg-transparent text-ink hover:border-rust hover:text-rust"}`}>
                 {x.label}
               </button>
             ))}

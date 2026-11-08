@@ -12,10 +12,9 @@ import { auth } from "@/lib/auth/server";
 export async function signUpWithEmail(_prevState, formData) {
   if (formData.get("age16") !== "on") return { error: "You must be 16 or older to use BookBridge." };
   if (formData.get("terms") !== "on") return { error: "Please agree to the Terms of Use and the Privacy Policy." };
-  const email = String(formData.get("email") || "").trim();
-  const { data, error } = await auth.signUp.email({
+  const { error } = await auth.signUp.email({
     name: String(formData.get("name") || ""),
-    email,
+    email: String(formData.get("email") || ""),
     password: String(formData.get("password") || ""),
   });
   if (error) return { error: error.message || "Sign-up failed" };
@@ -24,7 +23,5 @@ export async function signUpWithEmail(_prevState, formData) {
     maxAge: 60 * 30, // 30 minutes - only until the first page saves it
     sameSite: "lax",
   });
-  // The Neon Console REQUIRES a verified email: no session yet - enter the code from the email first
-  if (data && "token" in data && !data.token) redirect(`/auth/verify-email?email=${encodeURIComponent(email)}&next=/onboarding/genres`);
-  redirect("/onboarding/genres"); // otherwise: in now, the pop-up asks to verify (components/VerifyEmailGate.js)
+  redirect("/onboarding/genres");
 }

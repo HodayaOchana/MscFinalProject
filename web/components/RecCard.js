@@ -6,78 +6,91 @@ import Link from "next/link";
 import Cover from "./Cover";
 import Stars from "./Stars";
 import BookPeek, { hasPeek } from "./BookPeek";
+import { Warmth, WhyChip } from "./BookFit";
 import { BookmarkIcon, StarIcon, XIcon, PinIcon, ChatIcon } from "./Icons";
 import { api } from "@/lib/api";
-
-const REASON_STYLE = {
-  cf: "bg-moss-soft text-moss-dark",
-  cbf: "bg-sand text-[#5E4A2A]",
-  pop: "bg-rust-soft text-rust-dark",
-};
-const reasonKind = (r = "") => (r.includes("(CF)") ? "cf" : r.includes("(CBF)") ? "cbf" : "pop");
+import { addedToBasket, leftBasket } from "@/lib/basket";
 
 // onAsk: what "Ask about this book" does - by default it opens the chat about this book
-// (/chat?book=<id>&ask=1); the chat itself passes its own (ask in the same conversation)
-export default function RecCard({ book, showAvailability, onDismiss, onRated, onAsk }) {
-  const [saved, setSaved] = useState(false);
+// (/chat?book=<id>); the chat itself passes its own (ask in the same conversation)
+// A rated book stays on the card with the reader's stars, which they can change.
+// ratingSource: where the rating was given, when not the site's pages ("chat")
+export default function RecCard({ book, rank, showAvailability, onDismiss, onRated, onAsk, ratingSource }) {
+  const [myStars, setMyStars] = useState(book.myRating || 0);
+  const [saved, setSaved] = useState(Boolean(book.saved));
   const [rating, setRating] = useState(false);
   const [busy, setBusy] = useState(false);
   const author = book.authors?.[0] || ""; // first author only (not illustrators / translators)
-  const series = book.series;
+  const why = book.reasonText || book.reason;
 
-  async function save() {
+  async function save(e) {
+    const from = e.currentTarget.closest(".rec")?.querySelector("img");
     setBusy(true);
-    try { await api("/api/me/events", { method: "POST", body: { bookId: book.id, type: saved ? "unsaved" : "saved" } }); setSaved(!saved); }
+    try {
+      await api("/api/me/events", { method: "POST", body: { bookId: book.id, type: saved ? "unsaved" : "saved" } });
+      if (saved) leftBasket(); else addedToBasket(from);
+      setSaved(!saved);
+    }
     finally { setBusy(false); }
   }
   async function rate(n) {
     setBusy(true);
-    try { await api("/api/me/ratings", { method: "POST", body: { bookId: book.id, rating: n } }); setRating(false); onRated?.(book.id, n); }
+    try { await api("/api/me/ratings", { method: "POST", body: { bookId: book.id, rating: n, ...(ratingSource ? { source: ratingSource } : {}) } }); setRating(false); setMyStars(n); onRated?.(book.id, n); }
     finally { setBusy(false); }
   }
   async function dismiss() {
     onDismiss?.(book.id);
-    api("/api/me/events", { method: "POST", body: { bookId: book.id, type: "dismissed" } }).catch(() => {});
+    // saved first, then "Why not?" (components/WhyNot.js) - the reason goes on this event
+    api("/api/me/events", { method: "POST", body: { bookId: book.id, type: "dismissed" } })
+      .then(() => window.dispatchEvent(new CustomEvent("bb-dismissed", { detail: { id: book.id, title: book.title } })))
+      .catch(() => {});
   }
 
   return (
-    <article className="flex flex-col gap-2.5">
-      <Link href={`/books/${book.id}`} className="group relative block no-underline" aria-describedby={hasPeek(book) ? `peek-${book.id}` : undefined}>
-        <Cover book={book} />
-        {book.isNew && <span className="absolute right-2.5 top-2.5 rounded-full bg-parchment px-2 py-1 text-[11px] font-bold text-moss">NEW</span>}
-        <BookPeek book={book} />
-      </Link>
-      <div className="flex flex-col gap-1">
-        <Link href={`/books/${book.id}`} className="font-bold leading-snug text-ink no-underline hover:text-rust">{book.title}</Link>
-        {author && <span className="text-[13px] text-muted">{author}</span>}
-        {series && (
-          <Link href={`/series/${encodeURIComponent(series.name)}`} className="text-[13px] italic text-ink-soft underline decoration-line-strong underline-offset-2 hover:text-rust">
-            {series.name}, book {series.number}
-            {series.more > 0 && <> · +{series.more} more in this series</>}
-          </Link>
-        )}
+    <article className="rec hover-host relative flex flex-col gap-2 hover:z-20 focus-within:z-20">
+      <div className="relative">
+        {rank && <span aria-hidden="true" className="absolute left-2 top-2 z-10 flex h-7 min-w-7 items-center justify-center rounded-full bg-parchment/85 px-1.5 text-sm font-bold text-ink backdrop-blur-sm">{rank}</span>}
+        <Link href={`/books/${book.id}`} className="group relative block no-underline" aria-describedby={hasPeek(book) ? `peek-${book.id}` : undefined}>
+          <Cover book={book} />
+          {book.isNew && <span className="absolute right-2.5 top-2.5 rounded-md bg-moss px-2 py-1 text-[11px] font-bold text-cream">NEW</span>}
+          <BookPeek book={book} actions />
+        </Link>
+        <div className="rec-actions hover-show absolute inset-x-1 bottom-2 z-20 flex justify-center gap-1" data-open={rating ? "" : undefined}>
+          {rating ? (
+            <div className="stars-plate"><Stars value={0} onChange={rate} size={20} label={`Rate ${book.title}`} /></div>
+          ) : (
+            <>
+              <button type="button" disabled={busy} onClick={save} aria-pressed={saved} aria-label={saved ? "Remove from my TBR" : "Add to my TBR (to be read)"} data-tip={saved ? "Take the bookmark out" : "Bookmark it"} className={`icon-btn ${saved ? "pop !bg-rust !text-cream" : ""}`}><BookmarkIcon filled={saved} /></button>
+              <button type="button" disabled={busy} onClick={() => setRating(true)} aria-label="Rate this book" data-tip="I read it – rate it" className={`icon-btn ${myStars > 0 ? "hidden" : ""}`}><StarIcon /></button>
+              <button type="button" onClick={dismiss} aria-label="Not for me" data-tip="Not for me – back on the shelf" className="icon-btn"><XIcon /></button>
+              {onAsk ? (
+                <button type="button" onClick={() => onAsk(book)} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask the librarian" className="icon-btn"><ChatIcon /></button>
+              ) : (
+                <Link href={`/chat?book=${book.id}`} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask the librarian" className="icon-btn no-underline"><ChatIcon /></Link>
+              )}
+            </>
+          )}
+        </div>
       </div>
-      {book.match > 0 && (
-        <span className="text-[13px] font-bold text-moss" title="How well this book fits you, compared with your best pick here">{book.match}% match</span>
+      <div className="flex flex-col gap-0.5">
+        <Link href={`/books/${book.id}`} title={book.title} className="book-title hover:text-rust">{book.title}</Link>
+        <span className="book-line" title={author}>{author}</span>
+      </div>
+      {(book.match > 0 || why) && (
+        <div className="flex h-7 items-center justify-between gap-2">
+          {book.match > 0 ? <Warmth match={book.match} /> : <span />}
+          {why && <WhyChip why={why} book={book.reasonBook} />}
+        </div>
       )}
-      <span dir="auto" className={`self-start rounded-xl px-2.5 py-1 text-xs leading-snug ${REASON_STYLE[reasonKind(book.reason)]}`}>{book.reasonText || book.reason}</span>
       {showAvailability && (
         <span className={`flex items-start gap-1.5 text-[13px] ${book.availability ? "text-moss-dark" : "text-muted"}`}>
           <span className="mt-0.5"><PinIcon /></span><span dir="auto">{book.availabilityText}</span>
         </span>
       )}
-      {rating ? (
-        <Stars value={0} onChange={rate} size={20} label={`Rate ${book.title}`} />
-      ) : (
-        <div className="flex gap-2">
-          <button type="button" disabled={busy} onClick={save} aria-pressed={saved} aria-label={saved ? "Remove from my TBR" : "Add to my TBR (to be read)"} data-tip={saved ? "Remove from my TBR" : "Add to my TBR"} className={`icon-btn ${saved ? "text-rust" : "text-ink"}`}><BookmarkIcon filled={saved} /></button>
-          <button type="button" disabled={busy} onClick={() => setRating(true)} aria-label="Rate this book" data-tip="I read it – rate it" className="icon-btn text-ink"><StarIcon /></button>
-          <button type="button" onClick={dismiss} aria-label="Not for me" data-tip="Not for me – hide it" className="icon-btn text-ink"><XIcon /></button>
-          {onAsk ? (
-            <button type="button" onClick={() => onAsk(book)} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask about this book" className="icon-btn text-ink"><ChatIcon /></button>
-          ) : (
-            <Link href={`/chat?book=${book.id}&ask=1`} aria-label={`Ask BookBridge about ${book.title}`} data-tip="Ask about this book" className="icon-btn text-ink no-underline"><ChatIcon /></Link>
-          )}
+      {myStars > 0 && !rating && (
+        <div className="flex items-center gap-1.5">
+          <Stars value={myStars} onChange={rate} size={18} label={`Your rating of ${book.title}`} />
+          <span className="text-xs font-bold text-moss-dark">Yours</span>
         </div>
       )}
     </article>

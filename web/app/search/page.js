@@ -12,15 +12,18 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
-import BookPeek from "@/components/BookPeek";
+import WaxSeal from "@/components/WaxSeal";
+import BookPeek, { hasPeek } from "@/components/BookPeek";
 import { SearchIcon, XIcon, ChatIcon } from "@/components/Icons";
 import { api } from "@/lib/api";
+import { useWormPage } from "@/lib/worm";
 
 const ClockIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
 );
 const norm = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
 const fmt = (n) => (n ?? 0).toLocaleString("en-US");
+const TRY_TAGS = ["dystopian", "coming of age", "made me cry", "vampires"];
 const TagIcon = () => <span aria-hidden="true" className="w-4 text-center font-bold">#</span>;
 
 export default function SearchPage() {
@@ -126,9 +129,10 @@ export default function SearchPage() {
   }
 
   const listOpen = open && items.length > 0;
+  useWormPage({ books: results || [], stats: results ? { searched: { q: searched, count: results.length } } : {} });
 
   return (
-    <AppShell width="max-w-[1000px]">
+    <AppShell width="max-w-[1280px]">
       <div className="flex flex-col gap-6">
         <div className="relative isolate z-40 flex flex-col gap-6"> {/* z-40: the recent-searches list opens OVER the results */}
         {/* soft warm colours behind the box, so its frosted glass has something to blur */}
@@ -137,10 +141,13 @@ export default function SearchPage() {
           <div className="absolute left-[42%] top-[50%] h-40 w-64 rounded-full bg-[#D9A54A] opacity-35 blur-3xl" />
           <div className="absolute right-[6%] top-[30%] h-44 w-72 rounded-full bg-[#6F8247] opacity-30 blur-3xl" />
         </div>
-        <h1 className="m-0 font-serif text-5xl font-semibold">Find a book</h1>
+        <div className="flex items-center gap-4">
+          <WaxSeal className="static lg"><SearchIcon /></WaxSeal>
+          <h1 className="m-0 font-serif text-4xl font-semibold tracking-tight md:text-5xl">Find a book</h1>
+        </div>
         <div ref={box} className="relative z-40">
           <form onSubmit={search} role="search"
-            className={`flex items-center gap-3 border border-white/70 bg-[rgba(255,251,244,0.45)] py-1.5 pl-5 pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_30px_rgba(43,33,28,0.10)] backdrop-blur-xl backdrop-saturate-150 transition-[border-color,background-color] focus-within:border-white focus-within:bg-[rgba(255,251,244,0.6)] focus-within:ring-2 focus-within:ring-[rgba(162,75,37,0.35)] ${listOpen ? "rounded-t-[26px] border-b-transparent" : "rounded-full"}`}>
+            className={`flex items-center gap-3 border border-line-strong bg-cream/70 py-1.5 pl-5 pr-2 shadow-[0_10px_30px_rgba(60,35,15,0.35)] backdrop-blur-xl backdrop-saturate-150 transition-[border-color,background-color] focus-within:border-rust focus-within:bg-cream focus-within:ring-2 focus-within:ring-rust/30 ${listOpen ? "rounded-t-md border-b-transparent" : "rounded-md"}`}>
             <span className="text-muted"><SearchIcon /></span>
             <label htmlFor="q" className="sr-only">Search by title, author or #tag</label>
             <input id="q" ref={input} value={q} autoComplete="off" placeholder="Title, author or #tag"
@@ -155,15 +162,15 @@ export default function SearchPage() {
                 <XIcon />
               </button>
             )}
-            <button className="btn btn-dark px-5 py-2.5">Search</button>
+            <button className="btn btn-primary !px-5 !py-2">Search</button>
           </form>
           {listOpen && (
-            <div className="absolute inset-x-0 top-full overflow-hidden rounded-b-[26px] border border-t-0 border-white/70 bg-[rgba(255,251,244,0.82)] pb-2 shadow-[0_18px_30px_rgba(43,33,28,0.18)] backdrop-blur-xl backdrop-saturate-150">
-              <div className="mx-5 border-t border-[rgba(43,33,28,0.12)]" />
+            <div className="absolute inset-x-0 top-full overflow-hidden rounded-b-md border border-t-0 border-line-strong bg-cream/95 pb-2 shadow-[0_18px_30px_rgba(60,35,15,0.18)] backdrop-blur-xl backdrop-saturate-150">
+              <div className="mx-5 border-t border-line" />
               <ul id="recent-list" role="listbox" aria-label={tagMode ? "Tags and recent searches" : "Recent searches"} className="m-0 list-none p-0 pt-1">
                 {items.map((it, i) => (
                   <li key={`${it.kind}-${it.query}`} id={`recent-${i}`} role="option" aria-selected={i === active}
-                    className={`group/item flex items-center gap-3 pl-5 pr-2 ${i === active ? "bg-white/50" : "hover:bg-white/35"}`}>
+                    className={`group/item flex items-center gap-3 pl-5 pr-2 ${i === active ? "bg-sand" : "hover:bg-sand/60"}`}>
                     <span className={it.kind === "tag" ? "text-rust" : "text-muted"}>{it.kind === "tag" ? <TagIcon /> : <ClockIcon />}</span>
                     <button type="button" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => run(it.query)}
                       className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 bg-transparent py-2.5 text-left text-[16px] text-ink">
@@ -173,7 +180,7 @@ export default function SearchPage() {
                     {it.kind === "recent" && (
                       <button type="button" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => forget(it.query)}
                         aria-label={`Remove “${it.query}” from recent searches`}
-                        className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full bg-transparent text-muted opacity-60 hover:bg-cream hover:text-ink hover:opacity-100 group-hover/item:opacity-100 [&_svg]:h-4 [&_svg]:w-4">
+                        className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full bg-transparent text-muted opacity-60 hover:bg-sand hover:text-ink hover:opacity-100 group-hover/item:opacity-100 [&_svg]:h-4 [&_svg]:w-4">
                         <XIcon />
                       </button>
                     )}
@@ -198,31 +205,30 @@ export default function SearchPage() {
               : <>{results.length} result{results.length === 1 ? "" : "s"} for “{searched}” – by title or author</>}
           </span>
         )}
-        {!results && !error && <p className="m-0 text-sm text-muted">Tip: type <strong>#</strong> to search by what readers say about a book – #dystopian, #coming of age, #made me cry.</p>}
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {!results && !error && (
+          <div className="flex flex-col gap-3">
+            <p className="m-0 text-sm text-muted">Tip: type <strong>#</strong> to search by what readers say about a book. Try one:</p>
+            <div className="flex flex-wrap gap-2">
+              {TRY_TAGS.map((t) => (
+                <button key={t} type="button" onClick={() => run(`#${t}`)} className="cursor-pointer rounded-md bg-rust-soft px-3.5 py-1.5 text-sm text-rust-dark transition-[transform,background-color,color] hover:-translate-y-0.5 hover:bg-rust hover:text-cream motion-reduce:transform-none">#{t}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        <ul className="book-grid m-0 list-none p-0">
+          {results?.length === 0 && <li className="col-span-full text-muted">Nothing found – try a shorter search, or a #tag.</li>}
           {(results || []).map((b) => (
-            <li key={b.id} onClickCapture={(e) => { if (e.target.closest("a")) opened(b.id); }} className="group card relative flex flex-wrap items-center gap-4 px-4 py-3.5 hover:z-30">
-              <Cover book={b} small className="w-[52px] flex-none" />
-              <div className="flex min-w-0 flex-[1_1_260px] flex-col gap-1">
-                <Link href={`/books/${b.id}`} className="text-[17px] font-bold text-ink no-underline hover:text-rust">{b.title}</Link>
-                <span className="text-sm text-muted">{(b.authors || []).join(", ")}</span>
-                {b.match === "tag" && <span className="self-start rounded-full bg-rust-soft px-2.5 py-0.5 text-xs text-rust-dark">#{b.tag} · {fmt(b.tag_count)} readers</span>}
-              </div>
+            <li key={b.id} onClickCapture={(e) => { if (e.target.closest("a")) opened(b.id); }} className="relative flex min-w-0 flex-col gap-2 hover:z-30 focus-within:z-30">
+              <Link href={`/books/${b.id}`} aria-describedby={hasPeek(b) ? `peek-${b.id}` : undefined} className="group relative block no-underline">
+                <Cover book={b} />
+                {/* on hover the cover turns into a floating card: rating, blurb */}
+                <BookPeek book={b} />
+              </Link>
+              <Link href={`/books/${b.id}`} className="book-title hover:text-rust">{b.title}</Link>
+              <span className="book-line">{b.authors?.[0]}</span>
+              {b.match === "tag" && <span className="self-start rounded-md bg-rust-soft px-2.5 py-0.5 text-xs text-rust-dark">#{b.tag} · {fmt(b.tag_count)} readers</span>}
               {/* ask the chatbot: is it for me, what is similar, where to borrow it */}
-              <Link href={`/chat?book=${b.id}&ask=1`} aria-label={`Ask BookBridge about ${b.title}`} className="flex items-center gap-1.5 rounded-full border border-line-strong px-4 py-2.5 text-sm text-ink no-underline hover:border-ink"><ChatIcon />Ask</Link>
-              <Link href={`/books/${b.id}`} className="rounded-full border border-line-strong px-4 py-2.5 text-sm text-ink no-underline hover:border-ink">View</Link>
-              {/* on hover the row grows into a floating card: bigger cover, rating, blurb */}
-              <BookPeek book={b} variant="row">
-                <div className="flex items-center gap-4">
-                  <Cover book={b} small className="w-[72px] flex-none" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="font-serif text-xl font-semibold leading-tight">{b.title}</span>
-                    <span className="text-sm text-muted">{(b.authors || []).join(", ")}</span>
-                  </div>
-                  <Link href={`/chat?book=${b.id}&ask=1`} tabIndex={-1} className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-4 py-2.5 text-sm text-ink no-underline hover:border-ink"><ChatIcon />Ask BookBridge</Link>
-                  <span className="rounded-full bg-ink px-4 py-2.5 text-sm text-parchment">View</span>
-                </div>
-              </BookPeek>
+              <Link href={`/chat?book=${b.id}`} aria-label={`Ask BookBridge about ${b.title}`} className="flex items-center gap-1.5 self-start text-[13px] text-ink-soft no-underline hover:text-rust"><ChatIcon />Ask about it</Link>
             </li>
           ))}
         </ul>

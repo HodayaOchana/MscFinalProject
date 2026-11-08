@@ -1,7 +1,7 @@
 // Input checks of the chatbot's tools (server/chat-tools.js). Run: npm test
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { helpers: { checkIds, withSuggested, cleanNote, fuseRanks }, ToolError } = require("../server/chat-tools");
+const { helpers: { checkIds, withSuggested, cleanNote, fuseRanks }, ToolError, hashtagsIn, slugOf } = require("../server/chat-tools");
 
 test("checkIds accepts a list of ids and removes repeats", () => {
   assert.deepEqual(checkIds([3, "4", 3], "ids"), [3, 4]);
@@ -43,4 +43,16 @@ test("fuseRanks puts a book found by both searches first", () => {
 test("fuseRanks with one list keeps its order, and an empty list changes nothing", () => {
   assert.deepEqual(fuseRanks([[{ id: 5 }, { id: 6 }], []]).map((b) => b.id), [5, 6]);
   assert.deepEqual(fuseRanks([[], []]), []);
+});
+
+test("hashtagsIn finds the reader's hashtags, once each, lower case, up to 5", () => {
+  assert.deepEqual(hashtagsIn("a cozy one #Cozy-Mystery #british, and #cozy-mystery again"), ["cozy-mystery", "british"]);
+  assert.deepEqual(hashtagsIn("no#tag here, #x is too short, # alone"), []);
+  assert.deepEqual(hashtagsIn("#a1 #b2 #c3 #d4 #e5 #f6"), ["a1", "b2", "c3", "d4", "e5"]);
+  assert.deepEqual(hashtagsIn(undefined), []);
+});
+
+test("slugOf writes a reader tag as a hashtag", () => {
+  assert.equal(slugOf("Cozy  Mystery"), "cozy-mystery");
+  assert.equal(slugOf("dragons"), "dragons");
 });

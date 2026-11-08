@@ -56,7 +56,7 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
 
   if (added) {
     return (
-      <div className="flex flex-col gap-2 rounded-xl bg-moss-soft px-5 py-4 text-moss-dark">
+      <div className="flex flex-col gap-2 rounded-md bg-moss-soft px-5 py-4 text-moss-dark">
         <strong>“{added.title}” is on BookBridge.</strong>
         <span className="text-sm">It already has {added.neighbours} similar books, so readers who like them can be offered yours – even before the first rating.</span>
         <div className="flex flex-wrap gap-4 text-sm">
@@ -68,7 +68,7 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-line p-4">
+    <form onSubmit={submit} className="flex flex-col gap-4 rounded-md border border-line p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm font-medium sm:col-span-2">Title
           <input name="title" required maxLength={300} className="field font-normal" />
@@ -91,7 +91,7 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
             const on = genres.includes(o.value);
             return (
               <button key={o.value} type="button" aria-pressed={on} onClick={() => toggle(o.value)}
-                className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm ${on ? "border-rust bg-rust text-cream" : "border-line-strong bg-cream text-ink hover:border-ink"}`}>
+                className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm ${on ? "border-rust bg-rust text-cream" : "border-line-strong bg-cream text-ink hover:border-ink"}`}>
                 {on && <CheckIcon />}{o.label}
               </button>
             );

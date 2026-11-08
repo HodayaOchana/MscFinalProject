@@ -144,7 +144,7 @@ function Audience({ bookId, preview }) {
                     <div className="relative"><Cover book={b} small /><BookPeek book={b} variant="pop" /></div>
                     <span className="text-[13px] font-bold leading-snug">{b.title}</span>
                     <span className="text-xs text-ink-soft">{b.share}% of your readers{b.generalShare !== null ? ` · ${b.generalShare}% of all` : ""}</span>
-                    {b.lift >= 1.2 && <span className="self-start rounded-full bg-moss-soft px-2 py-0.5 text-[11px] font-bold text-moss-dark">{b.lift.toFixed(1)}× more</span>}
+                    {b.lift >= 1.2 && <span className="self-start rounded-md bg-moss-soft px-2 py-0.5 text-[11px] font-bold text-moss-dark">{b.lift.toFixed(1)}× more</span>}
                   </Link>
                 </li>
               ))}

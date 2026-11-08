@@ -30,7 +30,7 @@ export default function InsightsTabs() {
         <div role="tablist" aria-label="Insights" className="flex gap-1 self-start rounded-full border border-line-strong p-1">
           {[["reading", "My reading"], ["author", "My books"]].map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => choose(k)}
-              className={`cursor-pointer rounded-full px-5 py-2 text-sm font-bold ${tab === k ? "bg-rust text-cream" : "bg-transparent text-ink hover:text-rust"}`}>
+              className={`cursor-pointer rounded-md px-5 py-2 text-sm font-bold ${tab === k ? "bg-rust text-cream" : "bg-transparent text-ink hover:text-rust"}`}>
               {label}
             </button>
           ))}
