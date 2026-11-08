@@ -60,6 +60,19 @@ export default function BookDetails({ id }) {
     api("/api/me").then((m) => m.preferredCity && setCity(m.preferredCity)).catch(() => {});
   }, [id]);
 
+  // A visit = the page was open (and on screen) for 8 seconds. For "Because you looked at" on For You.
+  // The server counts a book again only 30 minutes later; signed-out visitors are simply not counted.
+  useEffect(() => {
+    let seen = 0;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (++seen < 8) return;
+      clearInterval(timer);
+      api("/api/me/book-views", { method: "POST", body: { bookId: Number(id) } }).catch(() => {});
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [id]);
+
   useEffect(() => {
     api(`/api/books/${id}/availability?city=${encodeURIComponent(city)}`, { auth: false })
       .then((r) => setAvail({ city, ...r }))
