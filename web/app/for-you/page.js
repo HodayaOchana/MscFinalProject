@@ -82,6 +82,8 @@ export default function ForYouPage() {
   const visible = (list) => (list || []).filter((b) => !hidden.includes(b.id));
   const top = visible(data?.top);
   const rows = (data?.rows || []).map((r) => ({ ...r, books: visible(r.books) })).filter((r) => r.books.length);
+  // "Continue your series" / "Because you looked at <book>" - they change with what you do (server/fresh-rows.js)
+  const fresh = (data?.fresh || []).map((r) => ({ ...r, books: visible(r.books) })).filter((r) => r.books.length);
   const card = (b, rank) => (
     <div key={b.id} className="relative w-[176px] shrink-0 snap-start sm:w-[190px]">
       {rank && <span aria-hidden="true" className="absolute -right-1.5 -top-2 z-10 flex h-7 min-w-7 items-center justify-center rounded-full bg-ink px-1.5 text-sm font-bold text-parchment">{rank}</span>}
@@ -143,7 +145,7 @@ export default function ForYouPage() {
 
         {error && <p role="alert" className="text-rust-dark">{error}</p>}
         {me?.onboarded && (loading || (!data && !error)) && <BookshelfLoader label="Arranging your shelves…" />}
-        {data && !loading && !top.length && !rows.length && <p className="text-muted">No books match – try another city or “Available first”.</p>}
+        {data && !loading && !top.length && !rows.length && !fresh.length && <p className="text-muted">No books match – try another city or “Available first”.</p>}
 
         {data && !loading && (
           <div className="flex flex-col gap-10">
@@ -152,6 +154,14 @@ export default function ForYouPage() {
                 {top.map((b, i) => card(b, i + 1))}
               </ShelfRow>
             )}
+            {fresh.map((r) => (
+              <ShelfRow key={r.key} id={`shelf-${r.key}`} count={r.books.length} subtitle={r.subtitle} label={r.label}
+                title={r.anchor
+                  ? <>Because you looked at <Link href={`/books/${r.anchor.id}`} className="italic text-ink no-underline hover:text-rust">{r.anchor.title}</Link></>
+                  : r.label}>
+                {r.books.map((b) => card(b))}
+              </ShelfRow>
+            ))}
             {rows.map((r) => (
               <ShelfRow key={r.key} id={`shelf-${r.key}`} title={r.label} count={r.books.length}
                 subtitle={r.key === "more" ? "More books that fit your taste" : r.chosen ? "From a genre you chose" : "Also fits your taste"}>

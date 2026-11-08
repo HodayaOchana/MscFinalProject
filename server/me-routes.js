@@ -30,6 +30,9 @@
  *   POST   /api/me/author-request/resend a new confirmation email (once a day)
  *   GET    /api/me/insights              personal reading analytics (server/insights.js)
  *   GET    /api/me/searches              recent searches; POST / DELETE too (server/search-history.js)
+ *   POST   /api/me/book-views            { bookId } - the book page was open 8+ seconds (server/book-views.js)
+ *                                        rows also returns `fresh`: "Continue your series" and
+ *                                        "Because you looked at <book>" (server/fresh-rows.js)
  *   GET    /api/me/recommendations       ?count=10 [&exclude=1,2,3] [&city=Jerusalem | &lat=&lng=&radiusKm=] [&mode=filter|boost]
  *                                        exclude = books already shown ("Recommend more") - 10 NEW ones
  *
@@ -41,6 +44,7 @@ const { computeInsights } = require("./insights");
 const { computeAuthorInsights, computeAudience } = require("./author-insights");
 const mailer = require("./mailer");
 const { peekInfo, warmPeek, addPeek } = require("./book-peek");
+const { freshRows } = require("./fresh-rows");
 const { emailPublisher, verifiedNamesOf, EMAIL_RE, RESEND_HOURS } = require("./author-verification");
 const { authorPage, knownPenName, profilesTable, cleanWebsite } = require("./author-profiles");
 const { CONSENT_VERSIONS, REQUIRED, SOURCES, BODY_KEYS, currentConsents, consentNeeded } = require("./consents");
@@ -458,14 +462,23 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
   warmPeek(db); // sum the dataset ratings at server start, so the first visitor does not wait
 
   router.get("/recommendations/rows", wrap(async (req, res) => {
-    let nearby;
-    const where = nearbyFromQuery(req.query);
-    if (where) nearby = parseNearby(where);
+    // the library filter: the raw form goes to the model (it checks it again), the checked form to the fresh shelves
+    let nearby, where = null;
+    const asked = nearbyFromQuery(req.query);
+    if (asked) {
+      nearby = { ...asked, mode: req.query.mode }; // with the mode, so "Available first" works on the shelves too
+      where = parseNearby(nearby); // 400 on bad input
+    }
     // a few more places for books without ratings (new books, author uploads) - they get their own exposure
     const r = await recommendFor(req.user.id, ROW_POOL, nearby, [], { slots: 12 });
     const recs = r.recommendations;
     const top = recs.slice(0, TOP);
-    const rest = recs.slice(TOP);
+    // the shelves that change with what the user does (server/fresh-rows.js): "Continue your series",
+    // "Because you looked at <book>" - they take the places of the two last genre shelves
+    const fresh = (await freshRows(db, req.user.id, { skipIds: top.map((b) => b.id), where })).map((x) => ({ ...x, books: x.books.map(withTexts) }));
+    const onFresh = new Set(fresh.flatMap((x) => x.books.map((b) => b.id)));
+    const rest = recs.slice(TOP).filter((b) => !onFresh.has(b.id)); // no book twice on the page
+    const genreRowsMax = ROWS_MAX - fresh.length;
     const { rows: info } = rest.length
       ? await db.query(`SELECT id, goodbooks_id, main_genres, categories FROM books WHERE id = ANY($1::int[]);`, [rest.map((b) => b.id)])
       : { rows: [] };
@@ -484,17 +497,19 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     const rows = [];
     for (const k of order) {
       const books = shelves.get(k);
-      if (books.length >= ROW_MIN && rows.length < ROWS_MAX) rows.push({ key: k, label: GENRE_LABEL.get(k), chosen: chosen.includes(k), books });
+      if (books.length >= ROW_MIN && rows.length < genreRowsMax) rows.push({ key: k, label: GENRE_LABEL.get(k), chosen: chosen.includes(k), books });
       else leftover.push(...books);
     }
     if (leftover.length >= ROW_MIN) rows.push({ key: "more", label: "More picks for you", chosen: false, books: leftover.slice(0, ROW_MAX) });
     // for the floating card on hover: a short blurb + the overall rating (server/book-peek.js)
-    const shown = [...top, ...rows.flatMap((x) => x.books)];
+    const shown = [...top, ...fresh.flatMap((x) => x.books), ...rows.flatMap((x) => x.books)];
     const hover = await peekInfo(db, shown.map((b) => b.id));
     const add = (b) => ({ ...b, ...(hover.get(b.id) || {}) });
     res.json({
       cfModel: r.cfModel, genres: chosen, ...(r.nearby ? { nearby: r.nearby } : {}),
-      top: top.map(add), rows: rows.map((x) => ({ ...x, books: x.books.map(add) })),
+      top: top.map(add),
+      fresh: fresh.map((x) => ({ ...x, books: x.books.map(add) })), // shown right after the Top 10
+      rows: rows.map((x) => ({ ...x, books: x.books.map(add) })),
     });
   }));
 
@@ -513,6 +528,8 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
 
   // search history: GET/POST/DELETE /api/me/searches (server/search-history.js)
   require("./search-history")(router, { db, h });
+  // book page views: POST /api/me/book-views (server/book-views.js) - for "Because you looked at"
+  require("./book-views")(router, { db, h });
 
   return router;
 };
