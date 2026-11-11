@@ -5,6 +5,7 @@
 // the readers (reviews + discussion) and similar books.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import NotFoundView from "@/components/NotFoundView";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
 import LibraryVisit from "@/components/LibraryVisit";
@@ -158,7 +159,7 @@ export default function BookDetails({ id }) {
   const [stage, setStage] = useState(null); // the book on the reader's shelf: saved | reading | finished | null
 
   useEffect(() => {
-    api(`/api/books/${id}`, { auth: false }).then(setBook).catch((e) => setError(e.message));
+    api(`/api/books/${id}`, { auth: false }).then(setBook).catch((e) => setError(e));
     api(`/api/books/${id}/similar?count=${SIMILAR_FIRST}`, { auth: false })
       .then((r) => { setSimilar(r.books); setSimilarMore(r.hasMore); })
       .catch(() => setSimilar([]));
@@ -224,7 +225,8 @@ export default function BookDetails({ id }) {
     }
   }
 
-  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this book: {error}</p></AppShell>;
+  if (error && [400, 404].includes(error.status)) return <AppShell><NotFoundView what="book" /></AppShell>;
+  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this book: {error.message}. Try again in a moment.</p></AppShell>;
   if (!book) return <AppShell><BookshelfLoader label="Taking the book off the shelf…" /></AppShell>;
 
   // What you can do with the book - all in sight: bookmark it (the main one), reading it now,

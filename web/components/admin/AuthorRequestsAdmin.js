@@ -152,7 +152,7 @@ export default function AuthorRequestsAdmin({ focusId }) {
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <span className="eyebrow">Admin</span>
-            <Link href="/admin/reports" className="text-sm">Reports →</Link>
+            <span className="flex gap-4 text-sm"><Link href="/admin/publishers">Publishers →</Link><Link href="/admin/reports">Reports →</Link></span>
           </div>
           <h1 className="m-0 font-serif text-5xl font-semibold">Authors</h1>
           <p className="m-0 text-ink-soft">Authors are confirmed by their publisher through an emailed link. You decide book claims and can remove uploaded books.</p>

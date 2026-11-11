@@ -12,16 +12,24 @@ import { auth } from "@/lib/auth/server";
 export async function signUpWithEmail(_prevState, formData) {
   if (formData.get("age16") !== "on") return { error: "You must be 16 or older to use BookBridge." };
   if (formData.get("terms") !== "on") return { error: "Please agree to the Terms of Use and the Privacy Policy." };
+  const email = String(formData.get("email") || "").trim();
   const { error } = await auth.signUp.email({
     name: String(formData.get("name") || ""),
-    email: String(formData.get("email") || ""),
+    email,
     password: String(formData.get("password") || ""),
   });
-  if (error) return { error: error.message || "Sign-up failed" };
+  if (error) {
+    const exists = /already exists/i.test(error.message || "") || /USER_ALREADY_EXISTS/.test(error.code || "");
+    return exists
+      ? { error: "This email already has a BookBridge account.", signInEmail: email }
+      : { error: error.message || "Sign-up failed" };
+  }
   (await cookies()).set("bb_consent", JSON.stringify({ research: formData.get("research") === "on" }), {
     path: "/",
     maxAge: 60 * 30, // 30 minutes - only until the first page saves it
     sameSite: "lax",
   });
-  redirect("/onboarding/genres");
+  // Next step of sign-up: verify the email with a code, then the questionnaire. Verified here =
+  // the "Verify your email" pop-up never shows for this account (components/VerifyEmailGate.js).
+  redirect(`/auth/verify-email?email=${encodeURIComponent(email)}&next=/onboarding/genres`);
 }

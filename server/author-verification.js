@@ -19,7 +19,7 @@
  *     after 7 days and works once
  *   - opening the link decides nothing; the publisher must press a button (POST) -
  *     mail scanners open links on their own
- *   - a publisher email must be on PUBLISHER_EMAILS (server/mailer.js), and can't be
+ *   - a publisher email must be on the list (table publishers, server/mailer.js), and can't be
  *     the requester's own email
  *   - a verified name can't be edited by the author; uploads must list it as an author
  */

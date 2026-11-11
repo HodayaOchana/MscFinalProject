@@ -13,6 +13,8 @@
  *   GET  /api/admin/uploads                              books uploaded by authors (newest first)
  *   DELETE /api/admin/uploads/:bookId                    remove an uploaded book from the catalog
  *
+ *   /api/admin/publishers, /api/admin/publisher-requests  publishers the team adds - see server/publishers.js
+ *
  *   GET  /api/admin/reports?status=open|all              reported reviews / discussion messages, one row per item
  *   POST /api/admin/reports/decide                       { kind, bookId, id, action: hide | keep | restore }
  *        hide: hidden from readers (the writer still sees it) · keep: shown, the reports closed ·
@@ -25,6 +27,7 @@
 const express = require("express");
 const { isAdminEmail } = require("./mailer");
 const { profilesTable } = require("./author-profiles");
+const publishers = require("./publishers");
 
 module.exports = function adminRoutes({ db, requireUser, h }) {
   const { BadRequest, wrap, checkId } = h;
@@ -38,13 +41,14 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
   router.get("/summary", wrap(async (req, res) => {
     if (!isAdminEmail(await emailOf(req))) return res.json({ admin: false });
     const count = (sql) => db.query(sql).then((r) => r.rows[0].n).catch((err) => (err.code === "42P01" ? 0 : Promise.reject(err)));
-    const [claims, waiting, reports] = await Promise.all([
+    const [claims, waiting, reports, publisherRequests] = await Promise.all([
       count(`SELECT count(*)::int AS n FROM book_claims WHERE status = 'pending';`),
       count(`SELECT count(*)::int AS n FROM author_requests WHERE status = 'pending';`),
       count(`SELECT count(DISTINCT (kind, book_id, coalesce(review_user_id, 0), coalesce(post_id, 0)))::int AS n FROM book_reports WHERE status = 'open';`).catch(() => 0),
+      publishers.pendingCount(db).catch(() => 0), // "my publisher isn't listed" - server/publishers.js
     ]);
     // the bell counts what needs the TEAM: book claims and reported items (author requests wait for the publisher)
-    res.json({ admin: true, pendingBookClaims: claims, waitingForPublisher: waiting, openReports: reports });
+    res.json({ admin: true, pendingBookClaims: claims, waitingForPublisher: waiting, openReports: reports, pendingPublisherRequests: publisherRequests });
   }));
 
   router.use(async (req, res, next) => {
@@ -57,6 +61,9 @@ module.exports = function adminRoutes({ db, requireUser, h }) {
   });
 
   router.get("/me", (req, res) => res.json({ admin: true }));
+
+  // publishers the team adds + authors' "my publisher isn't listed" requests (server/publishers.js)
+  publishers.adminPublisherRoutes(router, { db, h });
 
   router.get("/author-requests", wrap(async (req, res) => {
     const all = req.query.status === "all";

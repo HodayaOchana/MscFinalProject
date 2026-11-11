@@ -73,7 +73,10 @@ export default function ShelfPage() {
   }
   async function rate(book, n) {
     await api("/api/me/ratings", { method: "POST", body: { bookId: book.id, rating: n } });
-    setRatings((r) => [{ bookId: book.id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url, rating: n, source: "app" }, ...(r || []).filter((x) => x.bookId !== book.id)]);
+    // a book already in "My reviews in stars" keeps its place (a changed rating doesn't jump to the top)
+    setRatings((r) => (r || []).some((x) => x.bookId === book.id)
+      ? r.map((x) => (x.bookId === book.id ? { ...x, rating: n } : x))
+      : [{ bookId: book.id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url, rating: n, source: "app" }, ...(r || [])]);
     showToast(`Rated ${n}★ – your picks will use it.`);
   }
   async function removeRating(bookId) {
@@ -149,7 +152,7 @@ export default function ShelfPage() {
         </section>
 
         {ratings?.length > 0 && (
-          <section aria-labelledby="my-ratings" className="flex flex-col gap-4">
+          <section id="ratings" aria-labelledby="my-ratings" className="flex scroll-mt-28 flex-col gap-4">
             <h2 id="my-ratings" className="m-0 font-serif text-2xl font-semibold tracking-tight">My reviews in stars</h2>
             <div className="book-grid">
               {ratings.map((r) => {
@@ -159,7 +162,7 @@ export default function ShelfPage() {
                     <Link href={`/books/${b.id}`} aria-label={b.title} className="group block no-underline"><Cover book={b} /></Link>
                     <Link href={`/books/${b.id}`} className="book-title hover:text-rust">{b.title}</Link>
                     <span className="book-line">{b.authors?.[0]}</span>
-                    <Stars value={r.rating} size={18} />
+                    <Stars value={r.rating} onChange={(n) => n !== r.rating && rate(b, n)} size={18} label={`Change your rating of ${b.title}`} />
                     <span className="text-xs text-muted">{SOURCE[r.source] || ""}</span>
                     <div className="rec-actions hover-show !absolute right-2 top-2 !m-0 z-10">
                       <button type="button" onClick={() => removeRating(b.id)} aria-label={`Remove rating of ${b.title}`} className="icon-btn"><XIcon /></button>

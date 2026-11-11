@@ -5,6 +5,7 @@
 // admin page, or the author's own Account page.
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotFoundView from "@/components/NotFoundView";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
 import BookPeek, { hasPeek } from "@/components/BookPeek";
@@ -17,9 +18,10 @@ const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, "")
 export default function AuthorDetails({ id }) {
   const [author, setAuthor] = useState(null);
   const [error, setError] = useState(null);
-  useEffect(() => { api(`/api/authors/${id}`).then(setAuthor).catch((e) => setError(e.message)); }, [id]);
+  useEffect(() => { api(`/api/authors/${id}`).then(setAuthor).catch((e) => setError(e)); }, [id]);
 
-  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this author: {error}</p></AppShell>;
+  if (error && [400, 404].includes(error.status)) return <AppShell><NotFoundView what="author" /></AppShell>;
+  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this author: {error.message}. Try again in a moment.</p></AppShell>;
   if (!author) return <AppShell><BookshelfLoader label="Finding the author…" /></AppShell>;
 
   return (

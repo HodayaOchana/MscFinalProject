@@ -164,6 +164,15 @@ All books of a series in order, then box sets. → `{ "name", "author", "books":
 ### `GET /api/libraries?city=Jerusalem`
 Open library branches (all, or in a city). → `{ "libraries": [{ "id", "name", "city", "address", "lat", "lng" }], "inventorySimulated": true }`
 
+### `GET /api/avatars/:userId?v=...`
+A profile picture as an image (for `<img src>`). Only of users who wrote a review or a discussion message under their own name - never behind a pen name. `v` changes when the picture does, so it can be cached for a day. 404 if none.
+
+### `GET /api/covers/:bookId?v=...`
+The cover picture of a book an author **uploaded** (a file instead of a link). The book's `thumbnail_url` points here, so every page shows it as usual. Cached for a day; `v` changes with the picture. 404 if none.
+
+### `POST /api/accounts/exists`
+`{ "email": "..." }` → `{ "exists": true | false }`. Used by the "Forgot password" page to say "no account with this email". Limited to 100 calls an hour (for the whole server).
+
 ### `GET /api/books/:id/availability?city=...` (or `?lat=&lng=&radiusKm=`)
 Where a book is on the shelf. → `{ "bookId", "availability": {...} | null, "availabilityText", "inventorySimulated": true }`
 
@@ -179,6 +188,9 @@ All routes here act on **the token's user only** (`server/me-routes.js`).
 |---|---|---|
 | `GET /api/me` | - | `{ id, name, email, userType, libraryId, preferredCity, onboarded, genres: [...], ratingsCount }` |
 | `PATCH /api/me` | `{ "preferredCity": "Jerusalem" }` | `{ ok, preferredCity }` |
+| `GET /api/me/avatar` | - | `{ image: "data:image/jpeg;base64,..." \| null }` - the profile picture |
+| `PUT /api/me/avatar` | `{ "image": "data:image/jpeg;base64,..." }` | JPEG / PNG / WebP, up to 80 KB (the website shrinks it to 256x256 first) |
+| `DELETE /api/me/avatar` | - | remove the picture |
 | `PUT /api/me/genres` | `{ "genres": ["fantasy", "romance"] }` (1-5) | `{ ok, genres }` |
 | `POST /api/me/onboarding` | `{ "genres": [...], "answers": [{ bookId, stars }] }` | saves the questionnaire → `{ saved: { genres, ratings }, ...10 recommendations }` |
 | `GET /api/me/consents` | - | `{ needed, required, versions, current: { terms, privacy, age_16, research } }` |
@@ -245,8 +257,10 @@ The whole **For You** page in one call (library filter allowed).
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /api/me/author` | - | `{ isAuthor, books, userId, request, profile, ... }` |
-| `POST /api/me/author-request` | `{ penName, books, publisherName, publisherEmail, message, confirm: true }` | "I am an author" - the publisher gets a confirmation email → `{ ok, emailed }` |
+| `GET /api/me/author` | - | `{ isAuthor, books, userId, request, profile, publishers: [{ key, name }], publisherRequest, ... }` - `publisherRequest`: the latest "my publisher isn't listed" (`{ status: pending\|added\|rejected, stage: new\|invited\|submitted\|added\|rejected, publisherName, note, publisherKey }`, `publisherKey` = choose it in the list) |
+| `POST /api/me/author-request` | `{ penName, books, publisher: "<key>", message, confirm: true }` | "I am an author": `publisher` = a key from `GET /api/me/author` → `publishers` (names only); the server looks up the email and the publisher gets a confirmation link → `{ ok, emailed }` |
+| | `{ ..., publisher: "other", publisherName, publisherContact }` | the publisher is not on the list: `publisherContact` = the publisher's **email** (not the author's own, not a listed one). A request for the team (one waiting at a time) + an email to the team with a link to `/admin/publishers?request=<id>` → 202 `{ ok, unlisted: true, requestId }`. The team sends the publisher a form; the author gets an email with the answer (`server/publishers.js`) |
+| `GET /api/me/author/questions` | - | readers' "Question for the author:" messages on the author's books → `{ questions: [{ ..., answered }], open }` (`open` = not answered yet - the badge in the header) |
 | `POST /api/me/author-request/resend` | - | a new confirmation email (once a day) |
 | `PUT /api/me/author/profile` | `{ penName, bio, website }` | the public author page (authors only) |
 | `GET /api/me/author/insights` | - | how readers respond to the author's books - counts only, never who (`server/author-insights.js`) |
@@ -284,7 +298,16 @@ The publisher gets an emailed link (`server/author-verification.js`). Opening th
 | `POST /api/publisher/decision` | `{ token, decision: "confirm" \| "decline" }` | once per link |
 
 The token is 256 random bits; only its SHA-256 is stored; it expires after 7 days and works once.
-Publisher emails must be on `PUBLISHER_EMAILS`.
+Publishers come from the `publishers` table only (managed on `/admin/publishers`); the key in `publishers: [{ key, name }]` is the row's id. Authors choose a name, never type an email. (The old `PUBLISHER_EMAILS` list in `.env` is moved into the table once by `node db/import-env-publishers.js`.)
+
+### A publisher that is not on the list fills in its details - `/api/publisher-apply` (no login)
+
+The link in the email the team sends (`/publisher/apply?token=...`, 14 days, one form).
+
+| Route | Body | Notes |
+|---|---|---|
+| `GET /api/publisher-apply?token=...` | - | `{ publisherName, contactEmail, penName, expiresAt, submitted }`; 404 bad link, 410 expired |
+| `POST /api/publisher-apply` | `{ token, name, website, registrationNumber, isbnPrefix, notes?, document: { data, name } }` | once per link; the email is the one the link was sent to (receiving it proves it). Up to 3 MB. The team gets an email |
 
 ### Verified authors - `/api/author`  🔒
 
@@ -293,6 +316,8 @@ Publisher emails must be on `PUBLISHER_EMAILS`.
 | `GET /api/author/search?q=...` | - | catalog search for "This is my book" → `{ books: [Book + { matchesYou }] }` |
 | `POST /api/author/claims` | `{ bookId, message? }` | linked at once if the book's author is one of your verified names; otherwise a claim for the team |
 | `POST /api/author/books` | `{ title, authors, description, genres, publishedDate, ... }` | a new book - live at once, with its embedding and similar books; must list your verified name as an author |
+| `PUT /api/author/books/:id/cover` | `{ image: "data:image/jpeg;base64,..." }` or `{ url: "https://..." }` | the cover of a book **you uploaded** (403 otherwise): JPEG / PNG / WebP up to 70 KB, or an https link (`server/book-covers.js`) |
+| `DELETE /api/author/books/:id/cover` | - | back to the designed cover |
 
 ---
 
@@ -302,7 +327,7 @@ Only signed-in users whose email is on `ADMIN_EMAILS` (`server/admin-routes.js`)
 
 | Route | Body | Notes |
 |---|---|---|
-| `GET /api/admin/summary` | - | for the header bell: `{ admin, pendingBookClaims, waitingForPublisher }` (non-admins: `{ admin: false }`, no 403) |
+| `GET /api/admin/summary` | - | for the header bell: `{ admin, pendingBookClaims, waitingForPublisher, openReports, pendingPublisherRequests }` (`pendingPublisherRequests` = new, or the publisher sent its details; non-admins: `{ admin: false }`, no 403) |
 | `GET /api/admin/me` | - | `{ admin: true }` |
 | `GET /api/admin/author-requests?status=pending\|all` | - | author requests and the publisher's answer |
 | `POST /api/admin/author-requests/:id/reject` | `{ note }` | stops the publisher link |
@@ -310,6 +335,15 @@ Only signed-in users whose email is on `ADMIN_EMAILS` (`server/admin-routes.js`)
 | `POST /api/admin/book-claims/:id/approve` \| `/reject` | `{ note }` | approve = link the book to the author |
 | `GET /api/admin/uploads` | - | books uploaded by authors, newest first |
 | `DELETE /api/admin/uploads/:bookId` | - | remove an **uploaded** book (never a catalog book); 409 if other data still refers to it |
+| `GET /api/admin/publishers` | - | `{ publishers, requests }` - every publisher on the list (`source`: team / publisher / env) and authors' "isn't listed" requests (`server/publishers.js`) |
+| `POST /api/admin/publishers` | `{ name, contactEmail, website, registrationNumber, isbnPrefix, document: { data: "data:application/pdf;base64,...", name }, notes?, requestId?, confirm? }` | add a publisher. The document (PDF / JPG / PNG, up to 2 MB - this route alone takes bodies up to 3 MB) is required. Cross-checks: the email's domain vs. the website, a free mailbox, the Israeli registration check digit, an Israeli site with a non-Israeli ISBN prefix → 409 `{ error, warnings }` unless `confirm: true`. With `requestId`: the request is marked added and the author is emailed |
+| `GET /api/admin/publishers/:id/document` | - | the document file |
+| `DELETE /api/admin/publishers/:id` | - | take it off the list (the row stays, `active = false`) |
+| `POST /api/admin/publisher-requests/:id/invite` | - | email the form to the publisher (the only way an unlisted address gets mail - an admin presses it); again only after 24 hours |
+| `GET /api/admin/publisher-requests/:id/document` | - | the document the publisher sent |
+| `POST /api/admin/publisher-requests/:id/approve` | `{ confirm? }` | add what the publisher sent to the list + email the author; 409 `{ warnings }` without `confirm: true` |
+| `POST /api/admin/publisher-requests/:id/link` | `{ publisherId }` | the publisher is on the list already: mark added, email the author |
+| `POST /api/admin/publisher-requests/:id/reject` | `{ note }` | not added: the author gets the note by email |
 
 ---
 
@@ -317,7 +351,7 @@ Only signed-in users whose email is on `ADMIN_EMAILS` (`server/admin-routes.js`)
 
 - **Own data only.** `/api/me/*` reads and writes the token's user; ids in the body are book ids, never user ids.
 - **No email leaves the server** except the user's own (`GET /api/me`) and, for the team, in admin routes.
-- **Emails sent by the server** (`server/mailer.js`): only to the project team (`ADMIN_EMAILS`) and to publishers on `PUBLISHER_EMAILS`; at most 20 a day, no retry on a login failure. Sign-in codes (verify email, forgot password) are sent by Neon Auth, not by this server.
+- **Emails sent by the server** (`server/mailer.js`): only to the project team (`ADMIN_EMAILS`), to publishers on the list (table `publishers`), to an unlisted publisher only when an admin presses "Send the form", and to an author with the team's answer; at most 20 a day, no retry on a login failure. Sign-in codes (verify email, forgot password) are sent by Neon Auth, not by this server.
 - **Missing optional tables** (search history, book views, reader tags, EASE): the routes keep working and simply skip that part.
 - **Deleting an account** deletes its data (`ON DELETE CASCADE`).
 

@@ -94,7 +94,7 @@ export default function ReportsAdmin() {
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <span className="eyebrow">Admin</span>
-            <Link href="/admin/author-requests" className="text-sm">Authors →</Link>
+            <span className="flex gap-4 text-sm"><Link href="/admin/author-requests">Authors →</Link><Link href="/admin/publishers">Publishers →</Link></span>
           </div>
           <h1 className="m-0 font-serif text-5xl font-semibold">Reports</h1>
           <p className="m-0 text-ink-soft">Reviews and discussion messages that readers reported. After 3 readers, an item is hidden on its own until you decide.</p>

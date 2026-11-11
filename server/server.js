@@ -15,6 +15,8 @@
  *   GET  /api/series?name=Harry%20Potter  all books of a series, in order (+ box sets)
  *   GET  /api/libraries?city=Jerusalem    library branches (for a map / a "choose library" list)
  *   GET  /api/books/:id/availability      where a book is on the shelf (?lat=&lng=&radiusKm= | ?city=)
+ *   POST /api/accounts/exists { email }   is there an account with this email (forgot password; 100 an hour)
+ *   GET  /api/avatars/:userId?v=...       a profile picture (only of people who wrote a review / message under their name)
  *
  * Signed-in user (Neon Auth token in "Authorization: Bearer ..."), see server/me-routes.js:
  *   GET/PATCH /api/me, PUT /api/me/genres, POST /api/me/onboarding,
@@ -67,7 +69,11 @@ const SIMILAR_MAX = 30; // "Similar in spirit": 6 at a time, up to 30
 
 const app = express();
 app.use(cors());                          // the website runs on another port in development
-app.use(express.json({ limit: "100kb" }));
+// JSON bodies up to 100 KB - only the team's "add a publisher" form carries a document (up to 2 MB)
+const smallJson = express.json({ limit: "100kb" });
+const docJson = express.json({ limit: "3mb" });
+const DOC_ROUTES = new Set(["/api/admin/publishers", "/api/publisher-apply", "/api/publisher-apply/"]); // the publisher forms
+app.use((req, res, next) => (req.method === "POST" && DOC_ROUTES.has(req.path) ? docJson : smallJson)(req, res, next));
 
 // ---------- input checks (never trust what the browser sends) ----------
 class BadRequest extends Error {}
@@ -83,7 +89,7 @@ function checkGenres(genres, { min = 0, max = 5 } = {}) {
 
 function checkId(value) {
   const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) throw new BadRequest("bad book id");
+  if (!Number.isInteger(id) || id <= 0 || id > 2147483647) throw new BadRequest("bad book id"); // the database's int range
   return id;
 }
 
@@ -310,6 +316,41 @@ app.get("/api/series", wrap(async (req, res) => {
   res.json({ name, author: rows[0].authors?.[0] || null, books: books.map((b) => withPeek.get(b.id)), collections: collections.map((b) => withPeek.get(b.id)) });
 }));
 
+// "Forgot password": is there an account with this email? (the page says so instead of waiting
+// for a code that never comes). Sign-up tells the same anyway ("already has an account").
+// Limited: 100 checks an hour for the whole site, against bulk guessing.
+const existsChecks = [];
+app.post("/api/accounts/exists", wrap(async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new BadRequest("please enter a valid email address");
+  const now = Date.now();
+  while (existsChecks.length && now - existsChecks[0] > 36e5) existsChecks.shift();
+  if (existsChecks.length >= 100) return res.status(429).json({ error: "too many checks - try again later" });
+  existsChecks.push(now);
+  const { rows } = await db.query(`SELECT 1 FROM neon_auth."user" WHERE lower(email) = $1 LIMIT 1;`, [email]);
+  res.json({ exists: rows.length > 0 });
+}));
+
+// A profile picture, as an image (for <img src>, which can't send a login token).
+// Only of someone who wrote a review or a discussion message under their own name - that is the
+// only place other readers see it; never behind a pen name. Your own picture: GET /api/me/avatar.
+//   GET /api/avatars/12?v=1731150000   (v = when it changed - a new address after a change, so it can be cached)
+app.get("/api/avatars/:userId", wrap(async (req, res) => {
+  const userId = checkId(req.params.userId);
+  const { rows } = await db.query(
+    `SELECT av.mime, av.image FROM user_avatars av
+     WHERE av.user_id = $1 AND (
+       EXISTS (SELECT 1 FROM book_reviews WHERE user_id = $1 AND alias IS NULL AND NOT coalesce(hidden, false))
+       OR EXISTS (SELECT 1 FROM book_posts WHERE user_id = $1 AND alias IS NULL AND NOT coalesce(hidden, false)));`,
+    [userId]
+  ).catch(() => ({ rows: [] })); // no table / older columns - no picture
+  if (!rows[0]) return res.status(404).json({ error: "no picture" });
+  res.set("Content-Type", rows[0].mime);
+  res.set("Cache-Control", "public, max-age=86400");
+  res.set("X-Content-Type-Options", "nosniff");
+  res.send(rows[0].image);
+}));
+
 app.get("/api/libraries", wrap(async (req, res) => {
   const params = [];
   let where = "WHERE is_open";
@@ -355,7 +396,18 @@ app.use("/api/authors", require("./author-routes")({ db, requireUser, h: { BadRe
 // authors verified by their publisher; claims and uploads (server/author-verification.js)
 const verification = require("./author-verification");
 app.use("/api/publisher", verification.publisherRoutes({ db, h: { BadRequest, wrap, checkId } }));
+// A publisher that is not on the list fills in its details (no login - the link from the team's email)
+{ const applyRouter = express.Router(); require("./publishers").publicApplyRoutes(applyRouter, { db, h: { BadRequest, wrap, checkId } }); app.use("/api/publisher-apply", applyRouter); }
 app.use("/api/author", verification.authorRoutes({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+// covers of books authors uploaded: PUT/DELETE /api/author/books/:id/cover, GET /api/covers/:id (server/book-covers.js)
+{
+  const covers = require("./book-covers");
+  covers.publicCoverRoute(app, { db, wrap, checkId });
+  const coverRouter = express.Router();
+  coverRouter.use(requireUser(db));
+  covers.authorCoverRoutes(coverRouter, { db, h: { BadRequest, wrap, checkId } });
+  app.use("/api/author", coverRouter);
+}
 
 // ---------- errors ----------
 app.use((req, res) => res.status(404).json({ error: "no such address" }));
@@ -366,6 +418,8 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   console.error(err);
   res.status(500).json({ error: "server error" });
 });
+
+require("./publishers").loadPublishers(db); // publishers the team added -> the authors' dropdown
 
 app.listen(PORT, () => {
   console.log(`BookBridge API on http://localhost:${PORT}  (try /api/health)`);

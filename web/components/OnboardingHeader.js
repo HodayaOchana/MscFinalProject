@@ -1,11 +1,15 @@
 import Logo from "./Logo";
 import ConsentGate from "./ConsentGate";
+import VerifyEmailGate from "./VerifyEmailGate";
+import PendingAvatar from "./PendingAvatar";
 
 // Top bar of the questionnaire: logo + "Step n of 2"
 export default function OnboardingHeader({ step }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-6 px-6 py-5 md:px-12">
       <ConsentGate />
+      <VerifyEmailGate />
+      <PendingAvatar />
       <Logo href="/for-you" />
       <div className="flex items-center gap-3 text-sm text-muted">
         <span>Step {step} of 2</span>
