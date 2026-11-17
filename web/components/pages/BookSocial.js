@@ -14,6 +14,7 @@
 // message is kept in this browser (a refresh does not lose it).
 // User text is shown as plain text (React escapes it) with its line breaks kept.
 // A reader who has not rated the book rates it right here (onRate - the book page's own rating).
+import { avatarSrc } from "@/lib/avatar";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import StarRating from "@/components/Stars";
@@ -67,11 +68,20 @@ const Stars = ({ n }) => <span aria-label={`${n} of 5 stars`} className="whitesp
 // on the writer's own review / message that readers reported - nobody else sees it now
 const HiddenNote = () => <span className="rounded-md bg-sand px-2 py-0.5 text-[11px] font-semibold text-ink-soft">Hidden – reported, the team is checking it</span>;
 const AuthorBadge = () => <span className="rounded-md bg-rust px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-cream">Author</span>;
-const Avatar = ({ name, author, small }) => (
-  <span aria-hidden="true" className={`flex shrink-0 items-center justify-center rounded-full font-serif font-semibold ${small ? "h-7 w-7 text-xs" : "h-9 w-9 text-sm"} ${author ? "bg-rust text-cream" : "bg-sand text-ink-soft"}`}>
-    {(name || "?").charAt(0).toUpperCase()}
-  </span>
-);
+// The writer's profile picture (server: never next to a pen name), else the first letter
+function Avatar({ name, author, small, image }) {
+  const [broken, setBroken] = useState(false);
+  const size = small ? "h-7 w-7 text-xs" : "h-9 w-9 text-sm";
+  if (image && !broken) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={avatarSrc(image)} alt="" onError={() => setBroken(true)} className={`${size} shrink-0 rounded-full object-cover ${author ? "ring-2 ring-rust" : ""}`} />;
+  }
+  return (
+    <span aria-hidden="true" className={`flex shrink-0 items-center justify-center rounded-full font-serif font-semibold ${size} ${author ? "bg-rust text-cream" : "bg-sand text-ink-soft"}`}>
+      {(name || "?").charAt(0).toUpperCase()}
+    </span>
+  );
+}
 const LINK = "cursor-pointer bg-transparent p-0 text-sm";
 const H3 = "m-0 font-serif text-2xl font-semibold";
 
@@ -233,7 +243,7 @@ function ReviewDialog({ r, onClose }) {
       <div role="dialog" aria-modal="true" aria-label={`${r.name}'s review`} onClick={(e) => e.stopPropagation()}
         className="card flex max-h-[80vh] w-full max-w-[560px] flex-col gap-3 overflow-y-auto rounded-md p-6">
         <div className="flex items-center gap-2.5">
-          <Avatar name={r.name} author={r.isAuthor} />
+          <Avatar name={r.name} author={r.isAuthor} image={r.avatar} />
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="flex items-center gap-1.5 text-sm font-bold text-ink">{r.mine ? "You" : r.name}{r.isAuthor && <AuthorBadge />}</span>
             <span className="flex items-center gap-1.5 text-xs text-muted">{r.rating > 0 && <Stars n={r.rating} />}{ago(r.updatedAt)}</span>
@@ -342,7 +352,7 @@ function ReviewCard({ r, own, onHelpful, onReport, onOpen }) {
   return (
     <li className={`flex h-[214px] snap-start flex-col gap-2.5 overflow-hidden rounded-md border p-4 ${own ? "border-rust/40 bg-rust-soft/30" : "border-line bg-parchment"}`}>
       <div className="flex items-center gap-2.5">
-        <Avatar name={own ? "You" : r.name} author={r.isAuthor} />
+        <Avatar name={own ? "You" : r.name} author={r.isAuthor} image={r.avatar} />
         <div className="flex min-w-0 flex-col">
           <span className="flex items-center gap-1.5 truncate text-sm font-bold text-ink">{own ? "You" : r.name}{r.isAuthor && <AuthorBadge />}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted">{r.rating > 0 && <Stars n={r.rating} />}{ago(r.updatedAt)}</span>
@@ -469,7 +479,7 @@ function Message({ m, grouped, canPin, onReply, onDelete, onPin, onJump, onReact
     <li id={`msg-${m.id}`} className={`group relative flex gap-3 rounded-md px-3 transition-colors ${grouped ? "py-0.5" : "pt-2.5 pb-0.5"} ${flash ? "bg-rust-soft/60" : author ? "border-l-2 border-rust/60 bg-rust-soft/25" : "hover:bg-parchment"}`}>
       {grouped
         ? <span className="w-9 shrink-0 pt-1 text-right text-[10px] text-transparent group-hover:text-muted">{clock(m.createdAt)}</span>
-        : <Avatar name={m.mine ? "You" : m.name} author={m.isAuthor} />}
+        : <Avatar name={m.mine ? "You" : m.name} author={m.isAuthor} image={m.avatar} />}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {!grouped && (
           <div className="flex flex-wrap items-baseline gap-x-2">

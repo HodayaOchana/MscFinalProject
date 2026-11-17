@@ -1,6 +1,7 @@
 "use client";
 
 // After "Not for me" (✕ on a book card): a small slip at the bottom asks why - optional, one tap.
+// It stays 12 s (paused while the mouse is on it). (It used the 3.5 s .toast fade before - too fast.)
 //   Already read it      -> "How was it?" stars (a real rating - the engine learns from it)
 //   Not my kind of book  -> noted
 //   Not right now        -> noted
@@ -46,7 +47,7 @@ export default function WhyNot() {
       {book && (
         <div key={book.id} role="dialog" aria-label="Why not for you?"
           onMouseEnter={() => step !== "done" && clearTimeout(timer.current)} onMouseLeave={() => step !== "done" && closeIn(OPEN_MS / 2)}
-          className="toast pointer-events-auto flex max-w-[460px] flex-col gap-2.5 rounded-md border border-line-strong bg-cream px-5 py-3.5 text-sm text-ink shadow-[0_12px_30px_rgba(60,35,15,0.3)]">
+          className="fresh-in pointer-events-auto flex max-w-[460px] flex-col gap-2.5 rounded-md border border-line-strong bg-cream px-5 py-3.5 text-sm text-ink shadow-[0_12px_30px_rgba(60,35,15,0.3)]">
           <div className="flex items-start gap-3">
             <p className="m-0 flex-1 leading-snug">
               {step === "done" ? note : step === "rate"

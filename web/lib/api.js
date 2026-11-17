@@ -130,8 +130,17 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
     throw await noTokenError(`the API refused the token (reason: ${info?.reason || "unknown"}) - see the server window`);
   }
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(json?.error || `API error ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(json?.error || `API error ${res.status}`), { status: res.status, body: json }); // status: pages show "not found" for 404 / 400; body: e.g. warnings
   return json;
+}
+
+// A file from the API (signed in), as a Blob - e.g. a publisher's document on the admin page
+export async function apiBlob(path) {
+  const token = await getToken(false);
+  if (!token) throw await noTokenError("Neon Auth gave no token");
+  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw Object.assign(new Error((await res.json().catch(() => null))?.error || `API error ${res.status}`), { status: res.status });
+  return res.blob();
 }
 
 // The same, read as server-sent events: the chat's answer while it is being written

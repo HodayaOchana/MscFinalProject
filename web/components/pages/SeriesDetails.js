@@ -4,6 +4,7 @@
 // which ones you rated, and the next one to read. Box sets at the end.
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotFoundView from "@/components/NotFoundView";
 import AppShell from "@/components/AppShell";
 import Cover from "@/components/Cover";
 import BookPeek, { hasPeek } from "@/components/BookPeek";
@@ -18,11 +19,12 @@ export default function SeriesDetails({ name }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api(`/api/series?name=${encodeURIComponent(name)}`, { auth: false }).then(setSeries).catch((e) => setError(e.message));
+    api(`/api/series?name=${encodeURIComponent(name)}`, { auth: false }).then(setSeries).catch((e) => setError(e));
     api("/api/me/ratings").then((r) => setMine(new Map(r.ratings.map((x) => [Number(x.bookId), x.rating])))).catch(() => {});
   }, [name]);
 
-  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this series: {error}</p></AppShell>;
+  if (error && [400, 404].includes(error.status)) return <AppShell><NotFoundView what="series" /></AppShell>;
+  if (error) return <AppShell><p role="alert" className="text-rust-dark">Could not load this series: {error.message}. Try again in a moment.</p></AppShell>;
   if (!series) return <AppShell><p className="text-muted">Loading…</p></AppShell>;
 
   const rated = series.books.filter((b) => mine.has(b.id)).length;

@@ -143,6 +143,11 @@ module.exports = function socialRoutes({ db, requireUser, h }) {
     const { rows: myName } = await db.query(
       `SELECT a.name FROM users u JOIN neon_auth."user" a ON a.id = u.auth_user_id WHERE u.id = $1;`, [me]
     );
+    // profile pictures (db/create-avatar-table.js) - never next to a pen name
+    const writers = [...new Set([...reviews.map((r) => r.user_id), ...posts.map((p) => p.user_id), me])];
+    const { rows: pics } = await soft(db.query(
+      `SELECT user_id, floor(extract(epoch FROM updated_at))::bigint AS v FROM user_avatars WHERE user_id = ANY($1::int[]);`, [writers]));
+    const picOf = new Map(pics.map((p) => [p.user_id, `/api/avatars/${p.user_id}?v=${p.v}`]));
     const reviewExtras = new Map(extras[0].rows.map((r) => [r.user_id, r]));
     const postExtras = new Map(extras[1].rows.map((r) => [Number(r.id), r]));
     const helpfulOf = new Map(helpful.map((h) => [h.review_user_id, h]));
@@ -158,6 +163,7 @@ module.exports = function socialRoutes({ db, requireUser, h }) {
       return {
       id: Number(p.id), body: p.body, pinned: p.pinned, createdAt: p.created_at,
       name: x?.alias || displayName(p.name), alias: Boolean(x?.alias), isAuthor: p.is_author && !x?.alias, mine: p.user_id === me,
+      avatar: x?.alias ? null : picOf.get(p.user_id) || null,
       who: whoOf(p.user_id, bookId),
       spoiler: Boolean(x?.spoiler),
       hidden: Boolean(x?.hidden),
@@ -177,12 +183,13 @@ module.exports = function socialRoutes({ db, requireUser, h }) {
         body: r.body, rating: r.rating, updatedAt: r.updated_at,
         name: reviewExtras.get(r.user_id)?.alias || displayName(r.name), alias: reviewExtras.get(r.user_id)?.alias || null,
         isAuthor: r.is_author && !reviewExtras.get(r.user_id)?.alias, mine: r.user_id === me,
+        avatar: reviewExtras.get(r.user_id)?.alias ? null : picOf.get(r.user_id) || null,
         spoiler: Boolean(reviewExtras.get(r.user_id)?.spoiler),
         hidden: Boolean(reviewExtras.get(r.user_id)?.hidden),
         helpful: helpfulOf.get(r.user_id)?.n || 0, helpfulByMe: Boolean(helpfulOf.get(r.user_id)?.mine),
       })),
       posts: top,
-      me: { rating: myRating[0]?.rating ?? null, isAuthor: author, name: displayName(myName[0]?.name) },
+      me: { rating: myRating[0]?.rating ?? null, isAuthor: author, name: displayName(myName[0]?.name), avatar: picOf.get(me) || null },
       authorHere: hasAuthor.length > 0, // an author of the book is on BookBridge - "Ask the author"
     });
   }));

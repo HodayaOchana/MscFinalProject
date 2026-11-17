@@ -26,10 +26,15 @@
  *   PUT    /api/me/author/profile        { penName, bio, website } - the author's page (authors only)
  *   GET    /api/me/author/insights       how readers respond to the author's books (server/author-insights.js)
  *   GET    /api/me/author/insights/audience?book=<id>|all   genres of the readers who loved it, books they also loved
- *   POST   /api/me/author-request        { penName, books, publisherName, publisherEmail, message, confirm }
+ *   POST   /api/me/author-request        { penName, books, publisher: <key from GET /api/me/author `publishers`>, message, confirm }
  *                                        "I am an author" - BookBridge emails the publisher to confirm
+ *                                        (the author picks a NAME; the server looks up the email - table publishers)
+ *                                        or { ..., publisher: "other", publisherName, publisherContact? } - the publisher
+ *                                        is not on the list: the TEAM gets an email (once a day per user), nothing is saved
  *   POST   /api/me/author-request/resend a new confirmation email (once a day)
  *   GET    /api/me/insights              personal reading analytics (server/insights.js)
+ *   GET/PUT/DELETE /api/me/avatar        the profile picture (server/avatar.js)
+ *   GET    /api/me/author/questions      readers' "Question for the author" messages on my books (server/author-questions.js)
  *   GET    /api/me/searches              recent searches; POST / DELETE too (server/search-history.js)
  *   POST   /api/me/book-views            { bookId } - the book page was open 8+ seconds (server/book-views.js)
  *                                        rows also returns `fresh`: "Continue your series" and
@@ -44,9 +49,10 @@ const express = require("express");
 const { computeInsights } = require("./insights");
 const { computeAuthorInsights, computeAudience } = require("./author-insights");
 const mailer = require("./mailer");
+const publishers = require("./publishers");
 const { peekInfo, warmPeek, addPeek } = require("./book-peek");
 const { freshRows } = require("./fresh-rows");
-const { emailPublisher, verifiedNamesOf, EMAIL_RE, RESEND_HOURS } = require("./author-verification");
+const { emailPublisher, verifiedNamesOf, RESEND_HOURS } = require("./author-verification");
 const { authorPage, knownPenName, profilesTable, cleanWebsite } = require("./author-profiles");
 const { CONSENT_VERSIONS, REQUIRED, SOURCES, BODY_KEYS, currentConsents, consentNeeded } = require("./consents");
 const path = require("path");
@@ -226,10 +232,12 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
       verifiedNames,
       claims: claims.map((c) => ({ id: Number(c.id), status: c.status, note: c.note, createdAt: c.created_at, bookId: c.book_id, title: c.title })),
       uploads,
-      publisherVerification: mailer.publisherVerificationReady(),
+      publisherVerification: true, // the form is open: a listed publisher, or "isn't listed" -> the team adds it
+      publishers: mailer.publisherChoices(), // names only, for the dropdown
+      publisherRequest: await publishers.latestRequest(db, req.user.id), // "isn't listed": waiting / added / not added
       request: r ? {
         id: Number(r.id), penName: r.pen_name, books: r.books, status: r.status, note: r.note, createdAt: r.created_at, decidedAt: r.decided_at,
-        publisherName: r.publisher_name || null, publisherEmail: r.publisher_email || null,
+        publisherName: r.publisher_name || null, // (the publisher's email is not shown to the author)
         emailSentAt: r.email_sent_at || null, publisherDecision: r.publisher_decision || null,
         canResend: r.status === "pending" && Boolean(r.publisher_email) && (!sentAt || Date.now() - sentAt > RESEND_HOURS * 36e5 || new Date(r.token_expires_at) < new Date()),
       } : null,
@@ -277,18 +285,29 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
     };
     const penName = text(req.body.penName, 120, "pen name");
     const books = text(req.body.books, 2000, "your books");
-    const publisherName = text(req.body.publisherName, 200, "publisher");
-    const publisherEmail = text(req.body.publisherEmail, 254, "publisher email").toLowerCase();
     const message = text(req.body.message, 2000, "message", false);
     if (req.body.confirm !== true) throw new BadRequest("please confirm that you are the author of these books");
     if (req.user.user_type === "librarian") throw new BadRequest("library accounts cannot become authors");
-    if (!EMAIL_RE.test(publisherEmail)) throw new BadRequest("publisher email: please check the address");
-    if (!mailer.publisherVerificationReady()) throw new BadRequest("publisher verification is not set up yet (PUBLISHER_EMAILS on the server)");
     const { rows: me } = await db.query(`SELECT name, email FROM neon_auth."user" WHERE id = $1;`, [req.user.authUserId]);
-    if (me[0]?.email && me[0].email.toLowerCase() === publisherEmail) throw new BadRequest("the publisher's email can't be your own email");
-    if (!mailer.isPublisherEmail(publisherEmail)) {
-      throw new BadRequest("we can only email publishers we know - please check the address, or contact the BookBridge team");
+
+    // The publisher is not on the list: a request to the team (they check it, add it, and email the
+    // author their answer) - server/publishers.js. One waiting request per author.
+    if (req.body.publisher === "other") {
+      const publisherName = text(req.body.publisherName, 200, "publisher name");
+      const contact = text(req.body.publisherContact, 254, "publisher contact", false);
+      const { id, emailed } = await publishers.requestPublisher(db, {
+        userId: req.user.id, me: me[0], penName, books, message, publisherName, contact,
+      }, BadRequest);
+      return res.status(202).json({ ok: true, unlisted: true, requestId: id, emailed });
     }
+
+    // A publisher from the list: the author chose a NAME, the email comes from the server's list
+    if (!mailer.publisherVerificationReady()) throw new BadRequest("no publishers on the list yet - choose \"My publisher isn't listed\"");
+    const pub = mailer.publisherByKey(req.body.publisher);
+    if (!pub) throw new BadRequest("please choose your publisher from the list");
+    const publisherName = pub.name;
+    const publisherEmail = pub.email;
+    if (me[0]?.email && me[0].email.toLowerCase() === publisherEmail) throw new BadRequest("this publisher's contact is your own email - please contact the BookBridge team");
     let r;
     try {
       ({ rows: [r] } = await db.query(
@@ -559,6 +578,10 @@ module.exports = function meRoutes({ db, hybrid, requireUser, h }) {
 
   // search history: GET/POST/DELETE /api/me/searches (server/search-history.js)
   require("./search-history")(router, { db, h });
+  // readers' questions to the author: GET /api/me/author/questions (server/author-questions.js)
+  require("./author-questions")(router, { db, h });
+  // profile picture: GET / PUT / DELETE /api/me/avatar (server/avatar.js)
+  require("./avatar")(router, { db, h });
   // book page views: POST /api/me/book-views (server/book-views.js) - for "Because you looked at"
   require("./book-views")(router, { db, h });
 

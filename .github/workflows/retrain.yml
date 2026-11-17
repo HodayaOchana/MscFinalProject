@@ -1,0 +1,90 @@
+# Nightly re-training of the recommendation model (CF/retrain.js) on GitHub Actions.
+#
+# What it does every night:
+#   1. gets the goodbooks-10k files (ratings.csv, to_read.csv) from the GitHub cache -
+#      downloaded ONCE from github.com/zygmuntz/goodbooks-10k, never read from Neon
+#   2. runs CF/retrain.js: skips if there are fewer than 10 new BookBridge signals;
+#      otherwise trains ALS + EASE, checks the new model on the 500 probe readers and
+#      publishes it to Neon only if it is not worse than the current one (else "rejected")
+#   3. every run is logged in the model_runs table
+#
+# Needs ONE repository secret: DATABASE_URL (the same value as in .env) -
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+# GitHub runs scheduled workflows ONLY from the repository's default branch (e.g. main).
+# By hand: Actions -> "Nightly model retrain" -> Run workflow (choose the mode).
+# A failed run is emailed by GitHub to whoever last changed this file.
+
+name: Nightly model retrain
+
+on:
+  schedule:
+    - cron: "17 0 * * *"   # 00:17 UTC = 02:17 Israel in winter, 03:17 in summer
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "normal = re-train only if there is new data"
+        type: choice
+        default: normal
+        options: [normal, force, dry-run, rollback]
+
+concurrency:
+  group: retrain          # never two trainings at the same time
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+
+      # goodbooks-10k never changes: keep it in the GitHub cache, download only if it is not there
+      - name: Restore goodbooks-10k files
+        id: goodbooks
+        uses: actions/cache/restore@v4
+        with:
+          path: data/goodbooks
+          key: goodbooks-10k-v1
+
+      - name: Download goodbooks-10k files (first run only)
+        if: steps.goodbooks.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p data/goodbooks
+          for f in ratings.csv to_read.csv; do
+            curl -fsSL --retry 3 -o "data/goodbooks/$f" "https://raw.githubusercontent.com/zygmuntz/goodbooks-10k/master/$f"
+          done
+          ls -lh data/goodbooks
+
+      # saved right away - so the next night uses the cache even if this training fails
+      - name: Save goodbooks-10k files to the cache
+        if: steps.goodbooks.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/goodbooks
+          key: goodbooks-10k-v1
+
+      - name: Re-train (CF/retrain.js)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_OPTIONS: --max-old-space-size=6144   # ~7M training rows + EASE need more than Node's default memory
+          MODE: ${{ github.event.inputs.mode || 'normal' }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "Missing the DATABASE_URL secret (Settings -> Secrets and variables -> Actions)"; exit 1; fi
+          case "$MODE" in
+            force)    node CF/retrain.js --force ;;
+            dry-run)  node CF/retrain.js --dry-run ;;
+            rollback) node CF/retrain.js --rollback ;;
+            *)        node CF/retrain.js ;;
+          esac

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckIcon } from "@/components/Icons";
 import { api } from "@/lib/api";
+import CoverField from "./CoverField";
 
 const MIN_DESC = 150;
 const MAX_GENRES = 3;
@@ -18,6 +19,7 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [added, setAdded] = useState(null);
+  const [cover, setCover] = useState({}); // { image } a picture file (shrunk) | { url } a link
 
   useEffect(() => {
     api("/api/onboarding/questionnaire", { auth: false })
@@ -45,10 +47,16 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
           isbn: f.get("isbn") || null,
           seriesName: f.get("seriesName") || null,
           seriesNumber: f.get("seriesNumber") ? Number(f.get("seriesNumber")) : null,
-          coverUrl: f.get("coverUrl") || null,
+          coverUrl: cover.url?.trim() || null,
         },
       });
-      setAdded({ id: r.bookId, title: f.get("title"), neighbours: r.neighbours });
+      // a picture file goes up after the book exists (PUT /api/author/books/:id/cover)
+      let coverNote = null;
+      if (cover.image) {
+        await api(`/api/author/books/${r.bookId}/cover`, { method: "PUT", body: { image: cover.image } })
+          .catch((err) => { coverNote = `The book is in, but the cover was not saved: ${err.message} – try again from “My books”.`; });
+      }
+      setAdded({ id: r.bookId, title: f.get("title"), neighbours: r.neighbours, coverNote });
       onDone();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
@@ -59,6 +67,7 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
       <div className="flex flex-col gap-2 rounded-md bg-moss-soft px-5 py-4 text-moss-dark">
         <strong>“{added.title}” is on BookBridge.</strong>
         <span className="text-sm">It already has {added.neighbours} similar books, so readers who like them can be offered yours – even before the first rating.</span>
+        {added.coverNote && <span className="text-sm text-rust-dark">{added.coverNote}</span>}
         <div className="flex flex-wrap gap-4 text-sm">
           <Link href={`/books/${added.id}`}>See the book page →</Link>
           <button type="button" onClick={onCancel} className="cursor-pointer bg-transparent p-0 text-moss-dark underline">Close</button>
@@ -114,9 +123,9 @@ export default function UploadBook({ verifiedNames, onDone, onCancel }) {
         <label className="flex flex-col gap-1.5 text-sm font-medium"><span>Book no. <span className="font-normal text-muted">(optional)</span></span>
           <input name="seriesNumber" type="number" min={0.5} max={999} step={0.5} className="field font-normal" />
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium sm:col-span-3"><span>Cover image link <span className="font-normal text-muted">(optional – without it the book gets a designed cover)</span></span>
-          <input name="coverUrl" type="url" maxLength={500} placeholder="https://…/cover.jpg" className="field font-normal" />
-        </label>
+        <div className="flex flex-col gap-1.5 text-sm font-medium sm:col-span-3"><span>Cover <span className="font-normal text-muted">(optional – without it the book gets a designed cover)</span></span>
+          <CoverField value={cover} onChange={setCover} />
+        </div>
       </div>
       {error && <p role="alert" className="m-0 text-sm text-rust-dark">{error}</p>}
       <div className="flex flex-wrap items-center gap-3">
