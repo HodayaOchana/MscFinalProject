@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node import-books.js",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",

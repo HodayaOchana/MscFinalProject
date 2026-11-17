@@ -99,8 +99,10 @@ function readDocument(doc, BadRequest) {
 function warningsFor({ contactEmail, website, registrationNumber, isbnPrefix }) {
   const emailDomain = contactEmail.split("@")[1];
   const warnings = [];
-  if (FREE_MAIL.test(emailDomain)) warnings.push(`The contact email is a private mailbox (${emailDomain}), not the publisher's own domain - anyone can open one.`);
-  else if (!sameSite(emailDomain, website)) warnings.push(`The contact email (${emailDomain}) is not on the publisher's website domain (${website}).`);
+  // the publisher's own domain first: "mail.lantern.co.il" starts like a free mailbox ("mail.") but is the publisher's server
+  if (sameSite(emailDomain, website)) { /* fine - the publisher's own domain */ }
+  else if (FREE_MAIL.test(emailDomain)) warnings.push(`The contact email is a private mailbox (${emailDomain}), not the publisher's own domain - anyone can open one.`);
+  else warnings.push(`The contact email (${emailDomain}) is not on the publisher's website domain (${website}).`);
   if (/^\d{9}$/.test(registrationNumber)) {
     if (!israeliCheckDigitOk(registrationNumber)) warnings.push("The registration number's check digit is wrong - it is not a valid Israeli company / association number.");
     else if (!/^5[0-9]/.test(registrationNumber)) warnings.push("Israeli companies start with 51 and associations (amutot) with 58 - this number starts differently.");
