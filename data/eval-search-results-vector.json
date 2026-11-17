@@ -1,0 +1,588 @@
+{
+  "date": "2026-11-05T14:08:07.194Z",
+  "summary": {
+    "mode": "vector",
+    "all": {
+      "queries": 40,
+      "hitAt1": 0.45,
+      "hitAt6": 0.7,
+      "mrr": 0.56
+    },
+    "description": {
+      "queries": 20,
+      "hitAt1": 0.35,
+      "hitAt6": 0.5,
+      "mrr": 0.41
+    },
+    "exact": {
+      "queries": 20,
+      "hitAt1": 0.55,
+      "hitAt6": 0.9,
+      "mrr": 0.7
+    },
+    "medianMs": 352,
+    "p95Ms": 382
+  },
+  "results": [
+    {
+      "kind": "description",
+      "query": "a boy discovers he is a wizard and goes to a boarding school of magic",
+      "rank": 2,
+      "ms": 1418,
+      "titles": [
+        "The Wizard Heir",
+        "Harry Potter and the Sorcerer's Stone",
+        "So You Want to Be a Wizard",
+        "The Magicians",
+        "Boy's Life",
+        "The Amulet of Samarkand"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "teenagers forced to fight to the death on live television",
+      "rank": 1,
+      "ms": 334,
+      "titles": [
+        "The Hunger Games",
+        "Eleventh Grade Burns",
+        "Gone",
+        "The Troop",
+        "Trials of Death",
+        "Rage"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a totalitarian state watches every citizen and rewrites history",
+      "rank": 4,
+      "ms": 334,
+      "titles": [
+        "We",
+        "Methuselah's Children",
+        "The Need for Nations",
+        "1984",
+        "The Gulag Archipelago 1918-1956",
+        "State Crime"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a small home-loving creature joins dwarves on a quest to steal treasure from a dragon",
+      "rank": 0,
+      "ms": 382,
+      "titles": [
+        "The Dragon Keeper",
+        "The Princess and Curdie",
+        "Searching for Dragons",
+        "Dragon Slippers",
+        "Where the Mountain Meets the Moon",
+        "Dragondrums"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a girl and a death narrator in Nazi Germany, she steals books",
+      "rank": 1,
+      "ms": 599,
+      "titles": [
+        "The Book Thief",
+        "The Reader",
+        "The Girl from Krakow",
+        "Lilac Girls",
+        "Skeletons at the Feast",
+        "Code Name Verity"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "two teenagers with cancer fall in love and travel to meet an author",
+      "rank": 0,
+      "ms": 373,
+      "titles": [
+        "Delirium",
+        "The History of Love",
+        "A Little Life",
+        "Love Anthony",
+        "P.S. I Love You",
+        "First Love"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a shepherd boy travels to Egypt searching for treasure and his personal legend",
+      "rank": 1,
+      "ms": 327,
+      "titles": [
+        "The Alchemist",
+        "The Story of Babar",
+        "The Thief",
+        "The Lion King: A little Golden Book",
+        "The Horse and His Boy",
+        "Taran Wanderer"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a professor follows clues in paintings to a secret about the church",
+      "rank": 1,
+      "ms": 344,
+      "titles": [
+        "The Da Vinci Code",
+        "The Secret History",
+        "Speaking from Among the Bones",
+        "The Dark Monk",
+        "Heist Society",
+        "The Rembrandt Affair"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a man is stranded alone on Mars and must grow potatoes to survive",
+      "rank": 1,
+      "ms": 377,
+      "titles": [
+        "The Martian",
+        "Stranger in a Strange Land",
+        "The Martian Chronicles",
+        "The Gods of Mars",
+        "Packing for Mars: The Curious Science of Life in the Void",
+        "The Resilient Gardener"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a young woman marries a rich widower and is haunted by his dead first wife at their estate",
+      "rank": 0,
+      "ms": 327,
+      "titles": [
+        "Second Glance",
+        "The Lady in the Lake",
+        "The Widow",
+        "The Bonesetter's Daughter",
+        "The Ghost Bride",
+        "The Haunting of Hill House"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a wealthy mysterious man throws lavish parties to win back his lost love in the 1920s",
+      "rank": 0,
+      "ms": 346,
+      "titles": [
+        "A Dangerous Fortune",
+        "The Guest Room",
+        "The Luxe",
+        "Secrets of a Summer Night",
+        "Bossman",
+        "Manwhore"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a lawyer in the American South defends a black man, seen through his daughter's eyes",
+      "rank": 0,
+      "ms": 376,
+      "titles": [
+        "Mudbound",
+        "The Rainmaker",
+        "Dreams from My Father: A Story of Race and Inheritance",
+        "A Time to Kill",
+        "Native Son",
+        "The Color of Water: A Black Man's Tribute to His White Mother"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a teenage boy leaves prep school and wanders New York feeling everyone is a phony",
+      "rank": 0,
+      "ms": 332,
+      "titles": [
+        "Invasion of the Boy Snatchers",
+        "Boy Meets Boy",
+        "Prep",
+        "The Outsiders",
+        "The Perks of Being a Wallflower",
+        "Gone"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "children evacuated to a country house find a wardrobe leading to a land of eternal winter",
+      "rank": 2,
+      "ms": 344,
+      "titles": [
+        "The Winter People",
+        "The Lion, the Witch, and the Wardrobe",
+        "The Arctic Incident",
+        "The House We Grew Up In",
+        "Cabin Fever",
+        "The City of Ember"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a desert planet, a noble family, giant worms and a precious spice",
+      "rank": 1,
+      "ms": 372,
+      "titles": [
+        "Dune",
+        "Shades of Earth",
+        "The Great Dune Trilogy",
+        "Elven Star",
+        "Out of the Silent Planet",
+        "The Mote in God's Eye"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a wife disappears on her anniversary and her husband becomes the suspect",
+      "rank": 0,
+      "ms": 322,
+      "titles": [
+        "The Silent Wife",
+        "Stay Close",
+        "15th Affair",
+        "The Widow",
+        "Gone",
+        "Chill Factor"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a hacker and a journalist investigate a decades old disappearance of a girl from a wealthy Swedish family",
+      "rank": 0,
+      "ms": 352,
+      "titles": [
+        "Firewall",
+        "The Girl Who Played with Fire",
+        "The Man from Beijing",
+        "The Absent One",
+        "The Ice Princess",
+        "Jar City"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a dog tells the story of his owner, a race car driver",
+      "rank": 1,
+      "ms": 374,
+      "titles": [
+        "The Art of Racing in the Rain",
+        "One Good Dog",
+        "A Dog's Journey",
+        "A Dog's Life: The Autobiography of a Stray",
+        "Oogy: The Dog Only a Family Could Love",
+        "Seabiscuit: An American Legend"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a boy survives a shipwreck and shares a lifeboat with a tiger",
+      "rank": 0,
+      "ms": 323,
+      "titles": [
+        "The Jungle Book",
+        "The Tiger Rising",
+        "Captains Courageous",
+        "Tiger's Quest",
+        "The Lion King",
+        "Scuffy the Tugboat"
+      ]
+    },
+    {
+      "kind": "description",
+      "query": "a girl falls in love with a vampire in a rainy town in Washington",
+      "rank": 0,
+      "ms": 358,
+      "titles": [
+        "Vampire Kisses",
+        "Thirst No. 1: The Last Vampire, Black Blood, and Red Dice",
+        "Frostbite",
+        "Girl of Nightmares",
+        "The Haunted",
+        "Origins"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Katniss",
+      "rank": 1,
+      "ms": 366,
+      "titles": [
+        "Catching Fire",
+        "The World of the Hunger Games",
+        "The Girl Who Was on Fire: Your Favorite Authors on Suzanne Collins' Hunger Games Trilogy",
+        "The Hunger Pains: A Parody",
+        "The Hunger Games Tribute Guide",
+        "Ascend"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Hogwarts",
+      "rank": 2,
+      "ms": 353,
+      "titles": [
+        "Hogwarts: An Incomplete and Unreliable Guide",
+        "Harry Potter and the Chamber of Secrets",
+        "Harry Potter and the Prisoner of Azkaban",
+        "Harry Potter and Philosophy: If Aristotle Ran Hogwarts",
+        "The Dervish Lodge",
+        "Harry Potter Page to Screen: The Complete Filmmaking Journey"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Frodo",
+      "rank": 1,
+      "ms": 322,
+      "titles": [
+        "The Fellowship of the Ring",
+        "The Hobbit",
+        "The Lord of the Rings: The Return of the King: Visual Companion",
+        "The Hobbit: Graphic Novel",
+        "The History of the Hobbit, Part One: Mr. Baggins",
+        "From the Two Rivers: The Eye of the World, Part 1"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Atticus Finch",
+      "rank": 4,
+      "ms": 374,
+      "titles": [
+        "The Catcher in the Rye",
+        "Henry Miller",
+        "Trapped",
+        "Mockingbird",
+        "Go Set a Watchman",
+        "Petals on the Wind"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Lisbeth Salander",
+      "rank": 1,
+      "ms": 326,
+      "titles": [
+        "The Girl Who Kicked the Hornet's Nest",
+        "Deerskin",
+        "The Millennium Trilogy",
+        "Lirael",
+        "Twice Tempted",
+        "Heartless"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Hercule Poirot",
+      "rank": 1,
+      "ms": 348,
+      "titles": [
+        "Sad Cypress",
+        "Pooh and the Philosophers",
+        "Speaking from Among the Bones",
+        "Unnatural Death",
+        "The Wheel of Darkness",
+        "Nemesis"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Sherlock Holmes",
+      "rank": 1,
+      "ms": 375,
+      "titles": [
+        "The Return of Sherlock Holmes",
+        "Sherlock Holmes of Baker Street: A Life of the World's First Consulting Detective",
+        "Sherlock Holmes: The Complete Novels and Stories, Volume I",
+        "The Improbable Adventures of Sherlock Holmes",
+        "The Exploits of Sherlock Holmes",
+        "The Seven-Percent Solution"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Mr. Darcy",
+      "rank": 2,
+      "ms": 325,
+      "titles": [
+        "Austenland",
+        "Mr. Darcy's Diary",
+        "My Lady Jane",
+        "Prom and Prejudice",
+        "The Invisible Man",
+        "Pride and Prejudice"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Winterfell",
+      "rank": 2,
+      "ms": 357,
+      "titles": [
+        "A Song of Ice and Fire",
+        "The World of Ice & Fire: The Untold History of Westeros and the Game of Thrones",
+        "Dragons of Winter Night",
+        "Winter's Heart",
+        "The Winter King",
+        "Snow Like Ashes"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Paul Atreides",
+      "rank": 3,
+      "ms": 367,
+      "titles": [
+        "House Atreides",
+        "Player Piano",
+        "God Emperor of Dune",
+        "The King of Attolia",
+        "The Architects of the Parthenon",
+        "VALIS"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Robert Langdon",
+      "rank": 1,
+      "ms": 324,
+      "titles": [
+        "Angels and Demons / The Da Vinci Code",
+        "John Amos Comenius, Bishop of the Moravians",
+        "The Story of B: An Adventure of the Mind and Spirit",
+        "Carter Beats the Devil",
+        "The Dante Club",
+        "The Prague Cemetery"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Heathcliff",
+      "rank": 0,
+      "ms": 352,
+      "titles": [
+        "Indebted",
+        "Fall From Grace",
+        "Sweet Evil",
+        "The Lost Prince",
+        "Blood Canticle",
+        "The High King"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Jay Gatsby",
+      "rank": 1,
+      "ms": 371,
+      "titles": [
+        "The Great Gatsby",
+        "The Swans of Fifth Avenue",
+        "Rules of Civility",
+        "Carter Beats the Devil",
+        "The Brooklyn Follies",
+        "Misbehaving"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Hazel Grace",
+      "rank": 0,
+      "ms": 322,
+      "titles": [
+        "Amazing Grace",
+        "Graceling",
+        "The Dark Divine",
+        "This Star Won't Go Out: The Life and Words of Esther Grace Earl",
+        "Wise Blood",
+        "Fall From Grace"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Bilbo Baggins",
+      "rank": 1,
+      "ms": 352,
+      "titles": [
+        "The History of the Hobbit, Part One: Mr. Baggins",
+        "J.R.R. Tolkien 4-Book Boxed Set: The Hobbit and The Lord of the Rings",
+        "The Hobbit: Graphic Novel",
+        "The Hobbit",
+        "The World of Winnie-the-Pooh",
+        "Dog Overboard!"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Aslan",
+      "rank": 2,
+      "ms": 375,
+      "titles": [
+        "The Amber Spyglass",
+        "The Silver Chair",
+        "Lirael",
+        "Asinaria",
+        "Erak's Ransom",
+        "Asterios Polyp"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Tris Prior",
+      "rank": 1,
+      "ms": 321,
+      "titles": [
+        "Insurgent",
+        "Pears' Shilling Cyclopaedia",
+        "Third Grave Dead Ahead",
+        "Medical Nemesis",
+        "Tris's Book",
+        "Don't Panic: The Official Hitchhiker's Guide to the Galaxy Companion"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Edward Cullen",
+      "rank": 1,
+      "ms": 356,
+      "titles": [
+        "Twilight: The Graphic Novel, Vol. 1",
+        "New Moon",
+        "Anne Rice's The Tale of the Body Thief",
+        "The Vampire Lestat",
+        "Twilight and History",
+        "Twilight and Philosophy: Vampires, Vegetarians, and the Pursuit of Immortality"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Percy Jackson",
+      "rank": 1,
+      "ms": 372,
+      "titles": [
+        "Percy Jackson's Greek Gods",
+        "Percy Jackson & the Olympians:  The Ultimate Guide",
+        "Percy Jackson and the Olympians",
+        "The Wrath of the Lizard Lord",
+        "The Stones of Venice",
+        "A Wizard of Earthsea"
+      ]
+    },
+    {
+      "kind": "exact",
+      "query": "Tyrion Lannister",
+      "rank": 2,
+      "ms": 330,
+      "titles": [
+        "A Knight of the Seven Kingdoms",
+        "A Dance with Dragons",
+        "The Hundred Thousand Kingdoms",
+        "Here be Dragons",
+        "White Gold Wielder",
+        "Kings Rising"
+      ]
+    }
+  ]
+}

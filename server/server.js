@@ -1,0 +1,426 @@
+/**
+ * BookBridge recommendation API - the one file the website talks to.
+ *
+ * The website (React / Next.js) calls these addresses; this server calls the
+ * recommendation code we built and measured (onboarding, hybrid, CBF).
+ *
+ *   GET  /api/health                      is the server up + database reachable
+ *   GET  /api/onboarding/questionnaire    the questionnaire: screens, texts, genres
+ *   POST /api/onboarding/books            { genres } -> ~20 books to rate
+ *   POST /api/recommendations             { answers | ratings, genres, count } -> 10 books
+ *   GET  /api/books/search?q=harry        search books by title or author; q=#dystopian - by reader tag
+ *   GET  /api/books/tags?q=dys            reader-tag suggestions for "#..." in the search box
+ *   GET  /api/books/:id                   one book's details
+ *   GET  /api/books/:id/similar           "similar books" for a book page (CBF), ?count=6&offset=0 (up to 30)
+ *   GET  /api/series?name=Harry%20Potter  all books of a series, in order (+ box sets)
+ *   GET  /api/libraries?city=Jerusalem    library branches (for a map / a "choose library" list)
+ *   GET  /api/books/:id/availability      where a book is on the shelf (?lat=&lng=&radiusKm= | ?city=)
+ *   POST /api/accounts/exists { email }   is there an account with this email (forgot password; 100 an hour)
+ *   GET  /api/avatars/:userId?v=...       a profile picture (only of people who wrote a review / message under their name)
+ *
+ * Signed-in user (Neon Auth token in "Authorization: Bearer ..."), see server/me-routes.js:
+ *   GET/PATCH /api/me, PUT /api/me/genres, POST /api/me/onboarding,
+ *   GET/POST /api/me/ratings, DELETE /api/me/ratings/:bookId, POST /api/me/events,
+ *   GET /api/me/recommendations   (recommendations from the SAVED ratings and genres)
+ *
+ * Chatbot (signed-in): POST /api/chat { message, conversationId? } - see server/chat.js
+ * Chatbot evaluation (raters, ADMIN_EMAILS + RATER_EMAILS): /api/chat-eval/... - see server/chat-eval-routes.js
+ * Reviews and discussion (signed-in): /api/social/books/:id ... - see server/social-routes.js
+ * Admin (project team, ADMIN_EMAILS in .env): /api/admin/author-requests ... - see server/admin-routes.js
+ * Authors: /api/publisher (the publisher confirms an author - no login), /api/author (claims, new books)
+ *          - see server/author-verification.js
+ *
+ * Library availability in recommendations - ONLY if the request asks for it:
+ *   POST /api/recommendations { ..., nearby: { location: {lat, lng}, radiusKm, mode } }
+ *        nearby can also be { city: "Jerusalem" } or { libraryIds: [1, 2] };
+ *        mode "filter" (default) = only books on the shelf nearby, "boost" = those first.
+ *   The inventory is SIMULATED for now (library/simulate-inventory.js).
+ *
+ * Two ways to get recommendations:
+ *   POST /api/recommendations     - ratings + genres sent in the request (no login; guests, tests)
+ *   GET  /api/me/recommendations  - a signed-in user; ratings + genres read from the database
+ *
+ * Setup (once):   npm install express cors jose
+ *                 .env: DATABASE_URL, NEON_AUTH_BASE_URL (Neon Console -> Auth)
+ * Run:            node server/server.js
+ * Then try in the browser:  http://localhost:3001/api/health
+ */
+
+const path = require("path");
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
+
+const root = path.join(__dirname, "..");
+const hybrid = require(path.join(root, "hybrid", "hybrid-recommender"));
+const { getOnboardingBooks, answersToRatings } = require(path.join(root, "onboarding", "onboarding"));
+const { QUESTIONNAIRE } = require(path.join(root, "onboarding", "questionnaire"));
+const { GENRES } = require(path.join(root, "onboarding", "genres"));
+const cbf = require(path.join(root, "CBF", "Recommender"));
+const { parseNearby, getAvailability, NearbyError } = require(path.join(root, "library", "availability"));
+const { loadSeries, diversify, hasSeriesColumns } = require(path.join(root, "hybrid", "diversity"));
+const { authorAccountsOfBook } = require("./author-profiles");
+const { addPeek } = require("./book-peek"); // blurb + overall rating for the hover card
+
+const db = hybrid.pool; // reuse the hybrid's connection pool for simple reads
+const PORT = Number(process.env.PORT) || 3001;
+const GENRE_KEYS = new Set(GENRES.map((g) => g.key));
+const SIMILAR_MAX = 30; // "Similar in spirit": 6 at a time, up to 30
+
+const app = express();
+app.use(cors());                          // the website runs on another port in development
+// JSON bodies up to 100 KB - only the team's "add a publisher" form carries a document (up to 2 MB)
+const smallJson = express.json({ limit: "100kb" });
+const docJson = express.json({ limit: "3mb" });
+const DOC_ROUTES = new Set(["/api/admin/publishers", "/api/publisher-apply", "/api/publisher-apply/"]); // the publisher forms
+app.use((req, res, next) => (req.method === "POST" && DOC_ROUTES.has(req.path) ? docJson : smallJson)(req, res, next));
+
+// ---------- input checks (never trust what the browser sends) ----------
+class BadRequest extends Error {}
+
+function checkGenres(genres, { min = 0, max = 5 } = {}) {
+  if (genres === undefined) genres = [];
+  if (!Array.isArray(genres)) throw new BadRequest("genres must be a list");
+  const unknown = genres.filter((g) => !GENRE_KEYS.has(g));
+  if (unknown.length) throw new BadRequest(`unknown genres: ${unknown.join(", ")}`);
+  if (genres.length < min || genres.length > max) throw new BadRequest(`choose ${min}-${max} genres`);
+  return [...new Set(genres)];
+}
+
+function checkId(value) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0 || id > 2147483647) throw new BadRequest("bad book id"); // the database's int range
+  return id;
+}
+
+// answers from the questionnaire: [{ bookId, stars: 1-5 | null }]
+// or ratings from the app: [{ bookId, rating: 1-5 }]
+function checkRatings(body) {
+  const list = body.answers ?? body.ratings ?? [];
+  if (!Array.isArray(list) || list.length > 1000) throw new BadRequest("answers must be a list (up to 1000)");
+  const answers = list.map((a) => ({
+    bookId: checkId(a.bookId),
+    stars: a.stars === null || a.stars === undefined ? (a.rating ?? null) : a.stars,
+  }));
+  return answersToRatings(answers); // keeps only stars 1-5, drops "haven't read"
+}
+
+const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
+
+// Text to show under each recommended book (the app is in English):
+// reasonText from questionnaire.js reasonLabels, availabilityText if asked
+function withTexts(rec) {
+  const out = { ...rec, reasonText: QUESTIONNAIRE.reasonLabels[rec.reason] || rec.reason };
+  if (rec.availability !== undefined) out.availabilityText = availabilityText(rec.availability);
+  return out;
+}
+
+// "Available at Gilo Library (2.3 km) and 2 more branches"
+function availabilityText(a) {
+  if (!a) return "Not available right now in the chosen libraries";
+  const n = a.nearest;
+  const dist = n.distanceKm === null ? "" : ` (${n.distanceKm} km)`;
+  const more = a.branchCount === 2 ? " and 1 more branch" : a.branchCount > 2 ? ` and ${a.branchCount - 1} more branches` : "";
+  return `Available at ${n.name}${dist}${more}`;
+}
+
+// nearby / location from a query string: ?lat=&lng=&radiusKm= or ?city=
+function nearbyFromQuery(q) {
+  if (q.lat !== undefined || q.lng !== undefined) {
+    return { location: { lat: q.lat, lng: q.lng }, radiusKm: q.radiusKm };
+  }
+  if (q.city) return { city: q.city };
+  return null;
+}
+
+// ---------- routes ----------
+
+app.get("/api/health", wrap(async (req, res) => {
+  await db.query("SELECT 1");
+  res.json({ ok: true });
+}));
+
+app.get("/api/onboarding/questionnaire", (req, res) => {
+  res.json(QUESTIONNAIRE);
+});
+
+app.post("/api/onboarding/books", wrap(async (req, res) => {
+  const genres = checkGenres(req.body.genres, { min: 1, max: 5 });
+  const books = await getOnboardingBooks(genres);
+  res.json({ books });
+}));
+
+async function recommend(req, res) {
+  const genres = checkGenres(req.body.genres);
+  const ratings = checkRatings(req.body);
+  const count = Math.min(Math.max(Number(req.body.count) || 10, 1), 30);
+  // Library availability only if asked; checked here so bad input is a 400
+  const nearby = req.body.nearby ? req.body.nearby : undefined;
+  if (nearby) parseNearby(nearby);
+  // diversify: one book per series + at most 2 per author (hybrid/diversity.js)
+  const result = await hybrid.getHybridRecommendations(ratings, count, { genres, nearby, diversify: true });
+  res.json({ ...result, recommendations: result.recommendations.map(withTexts) });
+}
+app.post("/api/recommendations", wrap(recommend));
+app.post("/api/onboarding/submit", wrap(recommend)); // the name used in questionnaire.js
+
+// Search: by TITLE or AUTHOR ("rowling", "j k rowling" and "J.K. Rowling" all match),
+// or by a READER TAG with # ("#dystopian", "#coming of age") - book_reader_tags,
+// the shelves Goodreads readers put the books on (db/load-reader-tags.js).
+const normName = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const tagOf = (q) => String(q || "").replace(/^#+/, "").toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+
+app.get("/api/books/search", wrap(async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (q.startsWith("#")) {
+    const tag = tagOf(q);
+    if (tag.length < 2) throw new BadRequest("type at least 2 letters after #");
+    // the exact tag first; if no book has it, tags that START with it ("#dysto" -> dystopian)
+    const query = (cond) => db.query(
+      `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.goodbooks_id, t.tag, t.count AS tag_count
+       FROM book_reader_tags t JOIN books b ON b.id = t.book_id
+       WHERE ${cond}
+       ORDER BY t.count DESC
+       LIMIT 30;`, [tag]);
+    let { rows } = await query(`t.tag = $1`).catch((err) => { if (err.code === "42P01") return { rows: [] }; throw err; });
+    if (!rows.length) ({ rows } = await query(`t.tag LIKE $1 || '%'`).catch(() => ({ rows: [] })));
+    // a book found under two similar tags appears once
+    const seen = new Set();
+    rows = rows.filter((r) => !seen.has(r.id) && seen.add(r.id));
+    return res.json({ mode: "tag", tag: rows[0]?.tag || tag, books: await addPeek(db, rows.map((r) => ({ ...r, match: "tag" }))) });
+  }
+  if (q.length < 2) throw new BadRequest("search needs at least 2 letters");
+  const { rows } = await db.query(
+    `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.goodbooks_id,
+            CASE WHEN b.title ILIKE '%' || $1 || '%' THEN 'title' ELSE 'author' END AS match
+     FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id
+     WHERE b.title ILIKE '%' || $1 || '%'
+        OR (length($2) >= 3 AND EXISTS (SELECT 1 FROM unnest(b.authors) a
+                                        WHERE regexp_replace(lower(a), '[^a-z0-9]+', '', 'g') LIKE '%' || $2 || '%'))
+     ORDER BY (lower(b.title) = lower($1)) DESC,
+              (b.title ILIKE '%' || $1 || '%') DESC,       -- title matches first, then the author's books
+              coalesce(p.ratings_count, 0) DESC,           -- the better-known books first
+              length(b.title)
+     LIMIT 30;`,
+    [q, normName(q)]
+  );
+  res.json({ mode: "text", books: await addPeek(db, rows) });
+}));
+
+// Tag suggestions while typing "#...": the tags that start with it, most used first
+//   GET /api/books/tags?q=dys   ->  { tags: [{ tag: "dystopian", books: 412 }, ...] }   (q empty: the most common)
+app.get("/api/books/tags", wrap(async (req, res) => {
+  const t = tagOf(req.query.q);
+  const { rows } = await db.query(
+    `SELECT tag, count(*)::int AS books FROM book_reader_tags
+     WHERE ($1 = '' OR tag LIKE $1 || '%' OR tag LIKE '% ' || $1 || '%')
+     GROUP BY tag ORDER BY (tag LIKE $1 || '%') DESC, books DESC LIMIT 8;`,
+    [t]
+  ).catch((err) => { if (err.code === "42P01") return { rows: [] }; throw err; });
+  res.json({ tags: rows });
+}));
+
+app.get("/api/books/:id", wrap(async (req, res) => {
+  const id = checkId(req.params.id);
+  const { rows } = await db.query(
+    `SELECT b.id, b.title, b.authors, b.description, b.categories, b.main_genres,
+            b.thumbnail_url, b.published_date, b.page_count, b.goodbooks_id,
+            p.ratings_count, p.liked_count
+     FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id
+     WHERE b.id = $1;`,
+    [id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "book not found" });
+  const [{ avgRating = null, ratingCount = null } = {}] = await addPeek(db, rows); // the average of all ratings, for the top of the book page
+  // the book's series, for a "Book 3 of Harry Potter" link (db/add-series.js)
+  let series = null;
+  if (await hasSeriesColumns(db)) {
+    const { rows: s } = await db.query(
+      `SELECT series_name AS name, series_number::float8 AS number,
+              (SELECT count(*)::int FROM books o WHERE o.series_name = b.series_name AND o.series_number IS NOT NULL) AS total
+       FROM books b WHERE id = $1 AND series_name IS NOT NULL;`,
+      [id]
+    );
+    series = s[0] || null;
+  }
+  // author accounts linked to this book (author_books): the author's name links to their page
+  const authorAccounts = await authorAccountsOfBook(db, id).catch((err) => {
+    if (err.code !== "42P01") console.warn("[authors]", err.message);
+    return [];
+  });
+  // the readers' tags (book_reader_tags) - shown as #chips that search by tag
+  const { rows: tags } = await db.query(
+    `SELECT tag FROM book_reader_tags WHERE book_id = $1 ORDER BY count DESC LIMIT 10;`, [id]
+  ).catch(() => ({ rows: [] }));
+  res.json({ ...rows[0], avgRating, ratingCount, series, authorAccounts, readerTags: tags.map((t) => t.tag) });
+}));
+
+app.get("/api/books/:id/similar", wrap(async (req, res) => {
+  const id = checkId(req.params.id);
+  // ?count=6&offset=6 -> books 7-12 ("Show more", up to SIMILAR_MAX in all).
+  // The full list is built the same way every time (from a fixed pool), so
+  // the pages never repeat or reshuffle a book.
+  const count = Math.min(Math.max(Number(req.query.count) || 6, 1), 20);
+  const offset = Math.min(Math.max(Number(req.query.offset) || 0, 0), SIMILAR_MAX);
+  // Ask CBF for more, then keep a varied list: one book per series, at most
+  // 2 per author, no other edition of this same book (hybrid/diversity.js)
+  const raw = await cbf.getSimilarBooks(id, SIMILAR_MAX * 4);
+  const { rows: base } = await db.query(`SELECT title, authors FROM books WHERE id = $1;`, [id]);
+  const { seriesOf } = await loadSeries(db, [id, ...raw.map((b) => b.id)]);
+  // Books ABOUT this book are not "similar in spirit": guides, parodies, movie
+  // companions - a title with the series name (or this title) by another author
+  const about = (seriesOf.get(id) || base[0]?.title || "").toLowerCase().replace(/\s*[:(].*$/, "").replace(/^(the|a|an)\s+/, "").trim();
+  const myAuthor = (base[0]?.authors?.[0] || "").toLowerCase();
+  const notAbout = raw.filter((b) => !(about.length >= 5 && (b.authors?.[0] || "").toLowerCase() !== myAuthor
+    && String(b.title || "").toLowerCase().includes(about)));
+  const all = diversify(notAbout, { seriesOf, skipTitles: base.map((b) => b.title), count: SIMILAR_MAX });
+  const books = all.slice(offset, offset + count);
+  // covers for the website (CBF returns the book data without them)
+  const { rows: covers } = await db.query(
+    `SELECT id, thumbnail_url FROM books WHERE id = ANY($1::int[]);`,
+    [books.map((b) => b.id)]
+  );
+  const coverOf = new Map(covers.map((c) => [c.id, c.thumbnail_url]));
+  res.json({
+    books: await addPeek(db, books.map(({ id: bid, title, authors, goodbooks_id, score }) => ({
+      id: bid, title, authors, goodbooks_id, score, thumbnail_url: coverOf.get(bid) || null,
+    }))),
+    hasMore: offset + count < all.length,
+  });
+}));
+
+// All books of one series: numbered books in order, then box sets / omnibus
+// editions ("#1-7", no single number). Same edition twice (same number) -> the
+// one with more ratings.
+app.get("/api/series", wrap(async (req, res) => {
+  const name = String(req.query.name || "").trim();
+  if (!name || name.length > 200) throw new BadRequest("series name is required");
+  if (!(await hasSeriesColumns(db))) return res.status(404).json({ error: "series are not loaded (db/add-series.js)" });
+  const { rows } = await db.query(
+    `SELECT b.id, b.title, b.authors, b.thumbnail_url, b.published_date, b.goodbooks_id,
+            b.series_number::float8 AS number, coalesce(p.ratings_count, 0) AS ratings_count
+     FROM books b LEFT JOIN book_popularity p ON p.book_id = b.id
+     WHERE b.series_name = $1
+     ORDER BY b.series_number NULLS LAST, p.ratings_count DESC NULLS LAST, b.id;`,
+    [name]
+  );
+  if (!rows.length) return res.status(404).json({ error: "series not found" });
+  const seen = new Set();
+  const books = [];
+  const collections = [];
+  for (const r of rows) {
+    if (r.number === null) collections.push(r);
+    else if (!seen.has(r.number)) { seen.add(r.number); books.push(r); }
+  }
+  const withPeek = new Map((await addPeek(db, [...books, ...collections])).map((b) => [b.id, b])); // hover card
+  res.json({ name, author: rows[0].authors?.[0] || null, books: books.map((b) => withPeek.get(b.id)), collections: collections.map((b) => withPeek.get(b.id)) });
+}));
+
+// "Forgot password": is there an account with this email? (the page says so instead of waiting
+// for a code that never comes). Sign-up tells the same anyway ("already has an account").
+// Limited: 100 checks an hour for the whole site, against bulk guessing.
+const existsChecks = [];
+app.post("/api/accounts/exists", wrap(async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new BadRequest("please enter a valid email address");
+  const now = Date.now();
+  while (existsChecks.length && now - existsChecks[0] > 36e5) existsChecks.shift();
+  if (existsChecks.length >= 100) return res.status(429).json({ error: "too many checks - try again later" });
+  existsChecks.push(now);
+  const { rows } = await db.query(`SELECT 1 FROM neon_auth."user" WHERE lower(email) = $1 LIMIT 1;`, [email]);
+  res.json({ exists: rows.length > 0 });
+}));
+
+// A profile picture, as an image (for <img src>, which can't send a login token).
+// Only of someone who wrote a review or a discussion message under their own name - that is the
+// only place other readers see it; never behind a pen name. Your own picture: GET /api/me/avatar.
+//   GET /api/avatars/12?v=1731150000   (v = when it changed - a new address after a change, so it can be cached)
+app.get("/api/avatars/:userId", wrap(async (req, res) => {
+  const userId = checkId(req.params.userId);
+  const { rows } = await db.query(
+    `SELECT av.mime, av.image FROM user_avatars av
+     WHERE av.user_id = $1 AND (
+       EXISTS (SELECT 1 FROM book_reviews WHERE user_id = $1 AND alias IS NULL AND NOT coalesce(hidden, false))
+       OR EXISTS (SELECT 1 FROM book_posts WHERE user_id = $1 AND alias IS NULL AND NOT coalesce(hidden, false)));`,
+    [userId]
+  ).catch(() => ({ rows: [] })); // no table / older columns - no picture
+  if (!rows[0]) return res.status(404).json({ error: "no picture" });
+  res.set("Content-Type", rows[0].mime);
+  res.set("Cache-Control", "public, max-age=86400");
+  res.set("X-Content-Type-Options", "nosniff");
+  res.send(rows[0].image);
+}));
+
+app.get("/api/libraries", wrap(async (req, res) => {
+  const params = [];
+  let where = "WHERE is_open";
+  if (req.query.city) {
+    const { city } = parseNearby({ city: req.query.city });
+    params.push(city);
+    where += ` AND city = $1`;
+  }
+  const { rows } = await db.query(
+    `SELECT id, name, city, address, lat, lng FROM libraries ${where} ORDER BY city, name;`,
+    params
+  );
+  res.json({ libraries: rows, inventorySimulated: true });
+}));
+
+app.get("/api/books/:id/availability", wrap(async (req, res) => {
+  const id = checkId(req.params.id);
+  const nearby = nearbyFromQuery(req.query);
+  const where = nearby ? parseNearby(nearby) : { lat: null, lng: null, radiusKm: null, city: null, libraryIds: null };
+  const avail = (await getAvailability(db, [id], where)).get(id) || null;
+  res.json({ bookId: id, availability: avail, availabilityText: availabilityText(avail), inventorySimulated: true });
+}));
+
+// ---------- the signed-in user (/api/me) ----------
+const { requireUser } = require("./auth");
+const meRoutes = require("./me-routes");
+app.use("/api/me", meRoutes({
+  db, hybrid, requireUser,
+  h: { BadRequest, wrap, checkGenres, checkRatings, checkId, withTexts, nearbyFromQuery, parseNearby },
+}));
+
+// ---------- "Ask BookBridge" chatbot - AI model 2 (server/chat.js) ----------
+const recommendFor = meRoutes.makeRecommendFor({ db, hybrid, withTexts });
+app.use("/api/chat", require("./chat")({ db, requireUser, recommendFor, h: { wrap } }));
+app.use("/api/chat-eval", require("./chat-eval-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+
+// ---------- reviews and discussion around a book (server/social-routes.js) ----------
+app.use("/api/social", require("./social-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+
+// ---------- admin pages (project team only, ADMIN_EMAILS) - server/admin-routes.js ----------
+app.use("/api/admin", require("./admin-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+app.use("/api/authors", require("./author-routes")({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+// authors verified by their publisher; claims and uploads (server/author-verification.js)
+const verification = require("./author-verification");
+app.use("/api/publisher", verification.publisherRoutes({ db, h: { BadRequest, wrap, checkId } }));
+// A publisher that is not on the list fills in its details (no login - the link from the team's email)
+{ const applyRouter = express.Router(); require("./publishers").publicApplyRoutes(applyRouter, { db, h: { BadRequest, wrap, checkId } }); app.use("/api/publisher-apply", applyRouter); }
+app.use("/api/author", verification.authorRoutes({ db, requireUser, h: { BadRequest, wrap, checkId } }));
+// covers of books authors uploaded: PUT/DELETE /api/author/books/:id/cover, GET /api/covers/:id (server/book-covers.js)
+{
+  const covers = require("./book-covers");
+  covers.publicCoverRoute(app, { db, wrap, checkId });
+  const coverRouter = express.Router();
+  coverRouter.use(requireUser(db));
+  covers.authorCoverRoutes(coverRouter, { db, h: { BadRequest, wrap, checkId } });
+  app.use("/api/author", coverRouter);
+}
+
+// ---------- errors ----------
+app.use((req, res) => res.status(404).json({ error: "no such address" }));
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  if (err instanceof BadRequest || err instanceof NearbyError || err.message?.startsWith("Unknown genre")) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+  console.error(err);
+  res.status(500).json({ error: "server error" });
+});
+
+require("./publishers").loadPublishers(db); // publishers the team added -> the authors' dropdown
+
+app.listen(PORT, () => {
+  console.log(`BookBridge API on http://localhost:${PORT}  (try /api/health)`);
+});

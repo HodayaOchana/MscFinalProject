@@ -1,0 +1,279 @@
+{
+  "version": 2,
+  "language": "en",
+  "direction": "ltr",
+  "steps": [
+    {
+      "id": "welcome",
+      "type": "intro",
+      "enabled": true,
+      "title": "Welcome to BookBridge!",
+      "body": "To recommend books that really fit you, we'll ask a few short questions about your taste. It takes about two minutes.",
+      "primaryButton": "Let's start",
+      "secondaryButton": "Skip for now"
+    },
+    {
+      "id": "genres",
+      "type": "multiSelect",
+      "enabled": true,
+      "title": "What do you like to read?",
+      "subtitle": "Choose 3 to 5 genres",
+      "min": 3,
+      "max": 5,
+      "groups": [
+        {
+          "id": "fiction",
+          "title": "Fiction"
+        },
+        {
+          "id": "nonfiction",
+          "title": "Nonfiction"
+        }
+      ],
+      "options": [
+        {
+          "value": "fantasy",
+          "label": "Fantasy",
+          "group": "fiction"
+        },
+        {
+          "value": "science-fiction",
+          "label": "Science Fiction",
+          "group": "fiction"
+        },
+        {
+          "value": "mystery-crime",
+          "label": "Mystery & Crime",
+          "group": "fiction"
+        },
+        {
+          "value": "thriller",
+          "label": "Thriller & Suspense",
+          "group": "fiction"
+        },
+        {
+          "value": "romance",
+          "label": "Romance",
+          "group": "fiction"
+        },
+        {
+          "value": "historical",
+          "label": "Historical Fiction",
+          "group": "fiction"
+        },
+        {
+          "value": "contemporary",
+          "label": "Contemporary Fiction",
+          "group": "fiction"
+        },
+        {
+          "value": "classics",
+          "label": "Classics",
+          "group": "fiction"
+        },
+        {
+          "value": "young-adult",
+          "label": "Young Adult & Children",
+          "group": "fiction"
+        },
+        {
+          "value": "horror",
+          "label": "Horror",
+          "group": "fiction"
+        },
+        {
+          "value": "comics",
+          "label": "Comics & Graphic Novels",
+          "group": "fiction"
+        },
+        {
+          "value": "poetry-drama",
+          "label": "Poetry & Drama",
+          "group": "fiction"
+        },
+        {
+          "value": "biography",
+          "label": "Biography & Memoir",
+          "group": "nonfiction"
+        },
+        {
+          "value": "history-politics",
+          "label": "History & Politics",
+          "group": "nonfiction"
+        },
+        {
+          "value": "science-nature",
+          "label": "Science & Nature",
+          "group": "nonfiction"
+        },
+        {
+          "value": "psychology",
+          "label": "Psychology & Self-Help",
+          "group": "nonfiction"
+        },
+        {
+          "value": "philosophy",
+          "label": "Philosophy & Religion",
+          "group": "nonfiction"
+        },
+        {
+          "value": "business",
+          "label": "Business & Economics",
+          "group": "nonfiction"
+        },
+        {
+          "value": "technology",
+          "label": "Technology & Computers",
+          "group": "nonfiction"
+        },
+        {
+          "value": "health",
+          "label": "Health & Medicine",
+          "group": "nonfiction"
+        },
+        {
+          "value": "arts",
+          "label": "Art, Design & Music",
+          "group": "nonfiction"
+        },
+        {
+          "value": "lifestyle",
+          "label": "Travel, Food & Hobbies",
+          "group": "nonfiction"
+        },
+        {
+          "value": "education",
+          "label": "Education & Language",
+          "group": "nonfiction"
+        }
+      ],
+      "errors": {
+        "tooFew": "Choose at least 3 genres",
+        "tooMany": "You can choose up to 5 genres"
+      },
+      "counter": "{n} of 5 selected",
+      "primaryButton": "Continue"
+    },
+    {
+      "id": "rateBooks",
+      "type": "rating",
+      "enabled": true,
+      "title": "Rate books you've read",
+      "subtitle": "Here are books from your genres. Rate the ones you've read and mark the rest \"haven't read\".",
+      "source": "POST /api/onboarding/books",
+      "bookCount": 20,
+      "groupByGenre": true,
+      "stars": {
+        "min": 1,
+        "max": 5,
+        "labels": [
+          {
+            "value": 1,
+            "label": "Didn't like it at all"
+          },
+          {
+            "value": 2,
+            "label": "Didn't like it"
+          },
+          {
+            "value": 3,
+            "label": "It was OK"
+          },
+          {
+            "value": 4,
+            "label": "Liked it"
+          },
+          {
+            "value": 5,
+            "label": "Loved it"
+          }
+        ]
+      },
+      "notRead": {
+        "value": null,
+        "label": "Haven't read"
+      },
+      "recommendedMin": 3,
+      "hint": "The more books you rate, the better your recommendations.",
+      "lowRatingsConfirm": "You rated fewer than 3 books. You can continue, but recommendations will be more general. Continue anyway?",
+      "googleOnlyGenres": [
+        "technology",
+        "health",
+        "education"
+      ],
+      "primaryButton": "Continue",
+      "backButton": "Back to genres"
+    },
+    {
+      "id": "authors",
+      "type": "search",
+      "enabled": false,
+      "optional": true,
+      "title": "Any authors you especially like?",
+      "subtitle": "Optional. Type a name to search",
+      "placeholder": "e.g. J. K. Rowling",
+      "max": 5,
+      "primaryButton": "Continue",
+      "skipButton": "Skip"
+    },
+    {
+      "id": "freeText",
+      "type": "text",
+      "enabled": false,
+      "optional": true,
+      "title": "Tell us in your own words",
+      "subtitle": "Optional. What kind of book would you like to read now?",
+      "placeholder": "e.g. something suspenseful with a strong heroine, not too long",
+      "maxLength": 300,
+      "primaryButton": "Finish",
+      "skipButton": "Skip"
+    },
+    {
+      "id": "done",
+      "type": "loading",
+      "enabled": true,
+      "title": "Preparing your recommendations...",
+      "body": "In a moment you'll see 10 books picked just for you.",
+      "submit": "POST /api/onboarding/submit",
+      "next": "/recommendations"
+    }
+  ],
+  "reasonLabels": {
+    "Readers with similar taste liked it (CF)": "Readers with similar taste liked it",
+    "Popular in your genres": "Popular in your genres",
+    "Popular with readers": "Popular with readers",
+    "Similar in content to books you liked - new, no ratings yet (CBF)": "Similar in content to books you liked"
+  },
+  "api": {
+    "POST /api/onboarding/books": {
+      "request": {
+        "genres": [
+          "fantasy",
+          "technology"
+        ]
+      },
+      "response": "[{ id, title, authors, thumbnail_url, goodbooks_id, genre }, ...]  (~20 books)",
+      "backend": "getOnboardingBooks(genres)"
+    },
+    "POST /api/onboarding/submit": {
+      "request": {
+        "genres": [
+          "fantasy",
+          "technology"
+        ],
+        "answers": [
+          {
+            "bookId": 1930,
+            "stars": 5
+          },
+          {
+            "bookId": 2041,
+            "stars": null
+          }
+        ]
+      },
+      "response": "{ cfWeight, genres, recommendations: [{ id, title, authors, thumbnail_url, reason, score }, ...] }  (10 books)",
+      "backend": "ratings = answersToRatings(answers); save ratings + genres for the user; getHybridRecommendations(ratings, 10, { genres })"
+    }
+  }
+}
