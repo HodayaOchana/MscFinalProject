@@ -8,8 +8,8 @@
  *
  * Signed-in authors, mounted at /api/author:
  *   GET  /search?q=...                  catalog search for "This is my book"
- *   POST /claims { bookId, message? }    linked at once if the book's author is one of
- *                                        your VERIFIED names, otherwise a claim for the team
+ *   POST /claims { bookId }              links a book whose author is one of your VERIFIED names -
+ *                                        a book without your name on it can't be linked (400)
  *   POST /books { title, authors, description, genres, publishedDate, ... }
  *                                        a new book: live at once, with its embedding and
  *                                        content neighbours (server/book-embedding.js)
@@ -33,7 +33,6 @@ const { embedBook, saveNeighbours, toVector } = require("./book-embedding");
 
 const TOKEN_DAYS = 7;
 const RESEND_HOURS = 24;
-const MAX_PENDING_CLAIMS = 20;
 const MAX_UPLOADS_PER_DAY = 10;
 const GENRE = new Map(GENRES.map((g) => [g.key, g]));
 
@@ -245,34 +244,28 @@ function authorRoutes({ db, requireUser, h, embed }) {
        FROM books b
        WHERE b.title ILIKE '%' || $1 || '%' OR array_to_string(b.authors, ' ') ILIKE '%' || $1 || '%'
        ORDER BY (lower(b.title) = lower($1)) DESC, b.goodbooks_id NULLS LAST, length(b.title)
-       LIMIT 20;`,
+       LIMIT 200;`,
       [q, req.user.id]
     );
-    res.json({ books: rows.map((b) => ({ ...b, matchesYou: nameMatches(verified, b.authors) })) });
+    // only books with one of the author's verified names on them can be linked - so only those are shown
+    const own = rows.filter((b) => nameMatches(verified, b.authors)).slice(0, 20);
+    res.json({ books: own.map((b) => ({ ...b, matchesYou: true })) });
   }));
 
   router.post("/claims", wrap(async (req, res) => {
     mustBeAuthor(req);
     const bookId = checkId(req.body.bookId);
-    const message = typeof req.body.message === "string" ? req.body.message.trim().slice(0, 1000) || null : null;
     const { rows: b } = await db.query(`SELECT id, title, authors FROM books WHERE id = $1;`, [bookId]);
     if (!b[0]) throw new BadRequest("unknown book");
     const { rowCount: mine } = await db.query(`SELECT 1 FROM author_books WHERE user_id = $1 AND book_id = $2;`, [req.user.id, bookId]);
     if (mine) throw new BadRequest("this book is already linked to you");
     const verified = await verifiedNamesOf(db, req.user.id);
-    if (nameMatches(verified, b[0].authors)) {
-      await db.query(`INSERT INTO author_books (user_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [req.user.id, bookId]);
-      return res.json({ ok: true, linked: true });
+    // only a book with one of your verified names on it (the name your publisher confirmed)
+    if (!nameMatches(verified, b[0].authors)) {
+      throw new BadRequest(`your verified name (${verified.join(" / ") || "none yet"}) is not on this book - only books with your name on them can be linked`);
     }
-    const { rows: n } = await db.query(`SELECT count(*)::int AS n FROM book_claims WHERE user_id = $1 AND status = 'pending';`, [req.user.id]);
-    if (n[0].n >= MAX_PENDING_CLAIMS) throw new BadRequest(`you have ${MAX_PENDING_CLAIMS} claims waiting - please wait for the team`);
-    try {
-      await db.query(`INSERT INTO book_claims (user_id, book_id, message) VALUES ($1, $2, $3);`, [req.user.id, bookId, message]);
-    } catch (err) {
-      if (err.code === "23505") throw new BadRequest("you already asked for this book - it is waiting for the team");
-      throw err;
-    }
-    res.status(201).json({ ok: true, pending: true });
+    await db.query(`INSERT INTO author_books (user_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;`, [req.user.id, bookId]);
+    res.json({ ok: true, linked: true });
   }));
 
   router.post("/books", wrap(async (req, res) => {

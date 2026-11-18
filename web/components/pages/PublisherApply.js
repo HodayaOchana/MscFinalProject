@@ -1,13 +1,13 @@
 "use client";
 
 // The publisher's form: "Join BookBridge's list of publishers" - the link from the email the team
-// sends (no login). The publisher fills in its details and a document; the team checks them and
-// adds it to the list, and the author can then ask it to confirm them. Server: server/publishers.js.
+// sends (no login). The publisher gives its official page (+ website, ISBN prefix if it has one),
+// adds the code it is shown to the page's bio and ticks "I added it". The form asks - it doesn't
+// explain how the team checks. No documents. Server: server/publishers.js.
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Logo from "@/components/Logo";
 import { api } from "@/lib/api";
-import { DOC_TYPES, readDocument } from "@/lib/document-file";
 
 const day = (d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
@@ -26,9 +26,9 @@ export default function PublisherApply() {
   const [req, setReq] = useState(null);
   const [error, setError] = useState(token ? null : "This link is missing its code. Please open the link from the email again.");
   const [formError, setFormError] = useState(null);
-  const [doc, setDoc] = useState(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [codeAdded, setCodeAdded] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -37,24 +37,16 @@ export default function PublisherApply() {
       .catch((e) => setError(e.message));
   }, [token]);
 
-  async function chooseDoc(e) {
-    const file = e.target.files?.[0];
-    setDoc(null); setFormError(null);
-    if (!file) return;
-    try { setDoc(await readDocument(file)); } catch (err) { setFormError(err.message); e.target.value = ""; }
-  }
-
   async function submit(e) {
     e.preventDefault();
-    if (!doc) { setFormError("Please attach a document."); return; }
     const f = new FormData(e.currentTarget);
     setBusy(true); setFormError(null);
     try {
       await api("/api/publisher-apply", {
         method: "POST", auth: false,
         body: {
-          token, name: f.get("name"), website: f.get("website"), registrationNumber: f.get("registrationNumber"),
-          isbnPrefix: f.get("isbnPrefix"), notes: f.get("notes"), document: doc,
+          token, name: f.get("name"), website: f.get("website"), socialUrl: f.get("socialUrl"), codeAdded,
+          registrationNumber: f.get("registrationNumber"), isbnPrefix: f.get("isbnPrefix"), notes: f.get("notes"),
         },
       });
       setDone(true);
@@ -96,19 +88,29 @@ export default function PublisherApply() {
               <Field label="Email" hint="Confirmation requests will come to this address.">
                 <input value={req.contactEmail} readOnly className="field bg-cream font-normal text-ink-soft" />
               </Field>
-              <Field label="Website">
-                <input name="website" required maxLength={300} placeholder="lanternpress.co.il" className="field font-normal" />
+              <Field label="Official page on a social network" hint="Your publisher’s Facebook / Instagram page.">
+                <input name="socialUrl" required maxLength={300} placeholder="facebook.com/LanternPress" className="field font-normal" />
               </Field>
-              <Field label="Company / association number" hint="In Israel: the company or association (amuta) number, 9 digits.">
-                <input name="registrationNumber" required maxLength={30} inputMode="numeric" placeholder="51-123456-7" className="field font-normal" />
+              <Field label={<span>Website <span className="font-normal text-muted">(optional)</span></span>}>
+                <input name="website" maxLength={300} placeholder="lanternpress.co.il" className="field font-normal" />
               </Field>
-              <Field label="ISBN prefix" hint="Your publisher prefix, as on your books (e.g. 978-965-123).">
-                <input name="isbnPrefix" required maxLength={20} placeholder="978-965-123" className="field font-normal" />
+              <Field label={<span>ISBN prefix <span className="font-normal text-muted">(optional)</span></span>} hint="As on your books (e.g. 978-965-123) – we match it with the books in our catalog.">
+                <input name="isbnPrefix" maxLength={20} placeholder="978-965-123" className="field font-normal" />
               </Field>
-              <Field label="A document" hint="PDF, JPG or PNG, up to 2 MB – e.g. the registration certificate or the ISBN agency letter.">
-                <input type="file" required accept={DOC_TYPES.join(",")} onChange={chooseDoc} className="text-sm font-normal" />
+              <Field label={<span>Company / association number <span className="font-normal text-muted">(optional)</span></span>} hint="In Israel: 9 digits.">
+                <input name="registrationNumber" maxLength={30} inputMode="numeric" placeholder="51-123456-7" className="field font-normal" />
               </Field>
             </div>
+            {req.proofCode && (
+              <div className="flex flex-col gap-2 rounded-md bg-parchment px-4 py-3 text-sm text-ink-soft">
+                <span>Please add this code to the bio / About of your official page. We’ll email you when you’re on the list – then you can remove it.</span>
+                <code className="self-start rounded bg-cream px-3 py-1 font-mono text-base font-bold text-ink">{req.proofCode}</code>
+                <label className="flex items-start gap-2 text-ink">
+                  <input type="checkbox" required checked={codeAdded} onChange={(e) => setCodeAdded(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--color-rust)]" />
+                  <span>I added the code to my page’s bio.</span>
+                </label>
+              </div>
+            )}
             <Field label={<span>Anything we should know? <span className="font-normal text-muted">(optional)</span></span>}>
               <textarea name="notes" maxLength={1000} rows={2} className="field resize-y font-normal" />
             </Field>

@@ -4,7 +4,11 @@
 // Server: server/publishers.js (/api/admin/publishers, /api/admin/publisher-requests).
 //   Requests        - authors whose publisher is not on the list ("My publisher isn't listed"):
 //                     1. "Send the form to the publisher" - it gets an email with a form (/publisher/apply)
-//                     2. it fills in its details + a document -> they show here with the cross-checks
+//                        and a proof code
+//                     2. it fills in its website / official page (+ ISBN prefix) -> here with the PROOF:
+//                        email on the website's domain (checked by the server), or the code on its page
+//                        (you open the page and look), and the ISBN signal (books in our catalog +
+//                        the Global Register of Publishers) - no documents
 //                     3. "Add to the list" (the author gets an email and can continue) or "Don't add".
 //                     Also: link it to a publisher already on the list, or "Fill it in myself".
 //   Add a publisher - the team fills in the details itself (same checks).
@@ -16,7 +20,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { api, apiBlob } from "@/lib/api";
-import { DOC_TYPES, readDocument } from "@/lib/document-file";
 
 const when = (d) => new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const STATUS = {
@@ -43,29 +46,24 @@ function AddForm({ request, onDone, onCancel }) {
   const [error, setError] = useState(null);
   const [warnings, setWarnings] = useState(null); // the server's cross-checks - shown before adding
   const [sure, setSure] = useState(false);
-  const [doc, setDoc] = useState(null); // { data, name }
   const formRef = useRef(null);
   const contact = request?.contact || "";
 
-  async function chooseDoc(e) {
-    const file = e.target.files?.[0];
-    setDoc(null); setError(null);
-    if (!file) return;
-    try { setDoc(await readDocument(file)); } catch (err) { setError(err.message); e.target.value = ""; }
-  }
-
   async function submit(e) {
     e.preventDefault();
-    if (!doc) { setError("Please attach a document that shows it is really this publisher."); return; }
     const f = new FormData(formRef.current);
+    if (!String(f.get("website") || "").trim() && !String(f.get("socialUrl") || "").trim()) {
+      setError("Give the publisher’s website or its official page.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const out = await api("/api/admin/publishers", {
         method: "POST",
         body: {
-          name: f.get("name"), contactEmail: f.get("contactEmail"), website: f.get("website"),
+          name: f.get("name"), contactEmail: f.get("contactEmail"), website: f.get("website"), socialUrl: f.get("socialUrl"),
           registrationNumber: f.get("registrationNumber"), isbnPrefix: f.get("isbnPrefix"), notes: f.get("notes"),
-          document: doc, requestId: request?.id ?? null, confirm: Boolean(warnings && sure),
+          requestId: request?.id ?? null, confirm: Boolean(warnings && sure),
         },
       });
       changed();
@@ -91,17 +89,17 @@ function AddForm({ request, onDone, onCancel }) {
         <Field label="Contact email" hint="The confirmation links go here – best on the publisher’s own domain.">
           <input name="contactEmail" type="email" required maxLength={254} defaultValue={looksLikeEmail(contact) ? contact.trim() : ""} className="field font-normal" />
         </Field>
-        <Field label="Website" hint="We compare it with the email’s domain.">
-          <input name="website" required maxLength={300} defaultValue={!looksLikeEmail(contact) ? contact : ""} placeholder="lanternpress.co.il" className="field font-normal" />
+        <Field label="Website" hint="We compare it with the email’s domain – the main proof.">
+          <input name="website" maxLength={300} defaultValue={!looksLikeEmail(contact) ? contact : ""} placeholder="lanternpress.co.il" className="field font-normal" />
         </Field>
-        <Field label="Company / association number" hint="Israel: 9 digits (companies 51…, associations 58…) – look it up in the Corporations Authority registry.">
-          <input name="registrationNumber" required maxLength={30} inputMode="numeric" placeholder="51-123456-7" className="field font-normal" />
+        <Field label="Official page" hint="No website of its own? Its Facebook / Instagram page – check it’s the real one.">
+          <input name="socialUrl" maxLength={300} placeholder="facebook.com/LanternPress" className="field font-normal" />
         </Field>
-        <Field label="ISBN prefix" hint="The publisher’s prefix from the ISBN agency – Israeli ones start with 978-965.">
-          <input name="isbnPrefix" required maxLength={20} placeholder="978-965-123" className="field font-normal" />
+        <Field label={<span>ISBN prefix <span className="font-normal text-muted">(optional)</span></span>} hint="Israeli ones start with 978-965 – check it in the Global Register of Publishers.">
+          <input name="isbnPrefix" maxLength={20} placeholder="978-965-123" className="field font-normal" />
         </Field>
-        <Field label="Document (required)" hint="PDF, JPG or PNG, up to 2 MB – e.g. the registration certificate or the ISBN agency letter.">
-          <input type="file" required accept={DOC_TYPES.join(",")} onChange={chooseDoc} className="text-sm font-normal" />
+        <Field label={<span>Company / association number <span className="font-normal text-muted">(optional)</span></span>} hint="Israel: 9 digits (companies 51…, associations 58…).">
+          <input name="registrationNumber" maxLength={30} inputMode="numeric" placeholder="51-123456-7" className="field font-normal" />
         </Field>
       </div>
       <Field label={<span>Notes for the team <span className="font-normal text-muted">(optional)</span></span>}>
@@ -127,7 +125,31 @@ function AddForm({ request, onDone, onCancel }) {
   );
 }
 
-function RequestCard({ r, publishers, open, onDone }) {
+// What proves it is this publisher - the strongest first (server/publishers.js proofOf)
+function ProofList({ sub, code, grpUrl }) {
+  const { proof } = sub;
+  return (
+    <ul className="m-0 flex flex-col gap-1.5 pl-0 text-[15px]" style={{ listStyle: "none" }}>
+      <li>{proof?.domain
+        ? <span className="text-moss-dark">✓ <b>Domain proof:</b> the email it opened the link from is on {sub.website}.</span>
+        : <span className="text-ink-soft">✗ <b>No domain proof</b>{sub.website ? ` – the email is not on ${sub.website}.` : " – no website."}</span>}
+      </li>
+      {proof?.page && (
+        <li className="text-ink-soft">
+          → <b>Page proof:</b> open <a href={proof.page} target="_blank" rel="noopener noreferrer" className="break-all">{proof.page}</a> and look for <code className="rounded bg-cream px-1.5 font-mono font-bold text-ink">{code || "the code"}</code> in its About / bio. Check the page is the real one: old, with its books and followers.
+        </li>
+      )}
+      {sub.isbnPrefix && (
+        <li className="text-ink-soft">
+          → <b>ISBN signal:</b> {sub.isbnBooks == null ? "–" : `${sub.isbnBooks} book${sub.isbnBooks === 1 ? "" : "s"} in our catalog`} start with {sub.isbnPrefix}.
+          {grpUrl && <> Check the prefix belongs to this publisher in the <a href={grpUrl} target="_blank" rel="noopener noreferrer">Global Register of Publishers</a>.</>}
+        </li>
+      )}
+    </ul>
+  );
+}
+
+function RequestCard({ r, publishers, open, onDone, grpUrl }) {
   const [mode, setMode] = useState(null); // add (the team fills it in) | link | reject
   const [note, setNote] = useState("");
   const [pick, setPick] = useState("");
@@ -171,6 +193,7 @@ function RequestCard({ r, publishers, open, onDone }) {
         <dt className="text-muted">Books</dt><dd className="m-0 whitespace-pre-wrap">{r.books}</dd>
         {r.message && <><dt className="text-muted">Message</dt><dd className="m-0 whitespace-pre-wrap">{r.message}</dd></>}
         {r.invitedAt && <><dt className="text-muted">Form sent</dt><dd className="m-0">{when(r.invitedAt)}{!r.submittedAt && r.inviteExpiresAt && <span className="text-muted"> · link works until {when(r.inviteExpiresAt)}</span>}</dd></>}
+        {r.proofCode && <><dt className="text-muted">Proof code</dt><dd className="m-0"><code className="font-mono font-bold">{r.proofCode}</code> <span className="text-muted">– the publisher is asked to add it to its page’s bio (it gets an email to remove it once added)</span></dd></>}
         {r.status === "added" && <><dt className="text-muted">Added as</dt><dd className="m-0">{r.addedAs || "?"} · {when(r.decidedAt)}</dd></>}
         {r.status === "rejected" && <><dt className="text-muted">Your reason</dt><dd className="m-0">{r.note} · {when(r.decidedAt)}</dd></>}
       </dl>
@@ -181,18 +204,21 @@ function RequestCard({ r, publishers, open, onDone }) {
           <b className="text-[15px]">The publisher’s details{r.submittedAt && <span className="font-normal text-muted"> · sent {when(r.submittedAt)}</span>}</b>
           <dl className="m-0 grid grid-cols-[9rem_1fr] gap-y-1 text-[15px]">
             <dt className="text-muted">Name</dt><dd className="m-0">{sub.name}</dd>
-            <dt className="text-muted">Website</dt><dd className="m-0">{sub.website}</dd>
-            <dt className="text-muted">Registration no.</dt><dd className="m-0">{sub.registrationNumber}</dd>
-            <dt className="text-muted">ISBN prefix</dt><dd className="m-0">{sub.isbnPrefix}</dd>
+            <dt className="text-muted">Website</dt><dd className="m-0">{sub.website || "–"}</dd>
+            <dt className="text-muted">Official page</dt><dd className="m-0 break-all">{sub.socialUrl || "–"}</dd>
+            <dt className="text-muted">Registration no.</dt><dd className="m-0">{sub.registrationNumber || "–"}</dd>
+            <dt className="text-muted">ISBN prefix</dt><dd className="m-0">{sub.isbnPrefix || "–"}</dd>
             {sub.notes && <><dt className="text-muted">Their note</dt><dd className="m-0 whitespace-pre-wrap">{sub.notes}</dd></>}
           </dl>
-          <button type="button" onClick={viewDoc} className="btn btn-outline self-start px-4 py-2 text-sm">View document{sub.documentName ? ` (${sub.documentName})` : ""}</button>
+          <b className="pt-1 text-[15px]">Proof</b>
+          <ProofList sub={sub} code={r.proofCode} grpUrl={grpUrl} />
+          {sub.documentName && <button type="button" onClick={viewDoc} className="btn btn-outline self-start px-4 py-2 text-sm">View document ({sub.documentName})</button>}
           {warn.length > 0 ? (
             <div className="flex flex-col gap-1 text-sm">
               <b className="text-rust-dark">Check before adding:</b>
               <ul className="m-0 flex flex-col gap-1 pl-5">{warn.map((w) => <li key={w}>{w}</li>)}</ul>
             </div>
-          ) : <span className="text-sm text-moss-dark">The cross-checks found nothing odd. Still look at the document and the registry.</span>}
+          ) : <span className="text-sm text-moss-dark">The cross-checks found nothing odd. Still glance at the website.</span>}
         </div>
       )}
 
@@ -281,6 +307,7 @@ function PublisherRow({ p, onDone }) {
       <dl className="m-0 grid grid-cols-[9rem_1fr] gap-y-1 text-[15px]">
         <dt className="text-muted">Contact</dt><dd className="m-0 break-all">{p.contactEmail}</dd>
         <dt className="text-muted">Website</dt><dd className="m-0">{p.website || "–"}</dd>
+        {p.socialUrl && <><dt className="text-muted">Official page</dt><dd className="m-0 break-all"><a href={p.socialUrl} target="_blank" rel="noopener noreferrer">{p.socialUrl}</a></dd></>}
         <dt className="text-muted">Registration no.</dt><dd className="m-0">{p.registrationNumber || "–"}</dd>
         <dt className="text-muted">ISBN prefix</dt><dd className="m-0">{p.isbnPrefix || "–"}</dd>
         <dt className="text-muted">Added by</dt><dd className="m-0">{{ team: "the team", publisher: "the publisher’s form, checked by the team", env: "moved from the old .env list – not checked, no document" }[p.source] || "the team"}</dd>
@@ -338,7 +365,7 @@ export default function PublishersAdmin() {
             <span className="flex gap-4 text-sm"><Link href="/admin/author-requests">Authors →</Link><Link href="/admin/reports">Reports →</Link></span>
           </div>
           <h1 className="m-0 font-serif text-5xl font-semibold">Publishers</h1>
-          <p className="m-0 text-ink-soft">Authors are confirmed by their publisher. Add a publisher only after checking it’s real: its registration number, ISBN prefix and website – and a document that shows it.</p>
+          <p className="m-0 text-ink-soft">Authors are confirmed by their publisher. Add a publisher only with proof that it controls its own email domain – or its official page shows the code – and glance at its website and ISBN prefix.</p>
         </div>
 
         {error && (
@@ -357,7 +384,7 @@ export default function PublishersAdmin() {
               <h2 className="m-0 font-serif text-3xl font-semibold">Requests from authors {pending.length > 0 && <span className="text-muted">({pending.length})</span>}</h2>
               {pending.length === 0 && <p className="m-0 text-muted">No author is waiting for a publisher.</p>}
               {pending.map((r) => (
-                <RequestCard key={r.id} r={r} publishers={data.publishers} open={focus === r.id} onDone={() => done()} />
+                <RequestCard key={r.id} r={r} publishers={data.publishers} grpUrl={data.grpUrl} open={focus === r.id} onDone={() => done()} />
               ))}
             </section>
 
@@ -376,7 +403,7 @@ export default function PublishersAdmin() {
                 <button type="button" onClick={() => setShowDecided((s) => !s)} aria-expanded={showDecided} className="cursor-pointer self-start bg-transparent p-0 text-left font-serif text-2xl font-semibold text-ink">
                   Decided in the last 60 days ({decided.length}) {showDecided ? "▴" : "▾"}
                 </button>
-                {showDecided && decided.map((r) => <RequestCard key={r.id} r={r} publishers={data.publishers} onDone={load} />)}
+                {showDecided && decided.map((r) => <RequestCard key={r.id} r={r} publishers={data.publishers} grpUrl={data.grpUrl} onDone={load} />)}
               </section>
             )}
           </>

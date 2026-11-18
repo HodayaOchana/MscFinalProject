@@ -1,36 +1,46 @@
 /**
  * Publishers on the authors' list, and authors' "my publisher isn't listed" requests.
- * Tables: publishers, publisher_requests (db/create-publishers-tables.js).
+ * Tables: publishers, publisher_requests (db/create-publishers-tables.js + db/add-verification-proof.js).
  *
- * The flow - the PUBLISHER fills in its own details, the team checks them:
+ * How a publisher is checked - PROOF OF CONTROL, the way LinkedIn, Google and Spotify do it
+ * (knowing facts about a publisher proves nothing - anyone can copy them; controlling its email
+ * domain or its official page does):
  *   1. An author chooses "My publisher isn't listed" and gives the publisher's name and email
  *      (POST /api/me/author-request, publisher "other") -> a publisher_requests row + an email to the team.
- *   2. The team looks at the request on /admin/publishers and presses "Send the form to the publisher":
- *      the publisher gets an email with a private link (/publisher/apply?token=..., 14 days).
+ *   2. The team presses "Send the form to the publisher" on /admin/publishers: the publisher gets a
+ *      private link (/publisher/apply?token=..., 14 days) and a short proof code (BB-XXXXXX).
  *      Only an admin can send it - nobody can use the site to send mail to any address they like.
- *   3. The publisher fills in the form: name, website, company / association number, ISBN prefix and a
- *      document (required). Its email is the one the link was sent to - receiving the link proves it.
- *      The team gets an email: "<publisher> sent its details".
- *   4. The team checks the details (the server cross-checks them and shows warnings) and adds the
- *      publisher, or says no. The author gets an email either way; once added, it is in the list at once.
+ *   3. The publisher fills in: its name, its official page on a social network (required), its website,
+ *      and (optional) its ISBN prefix and company number. It ALWAYS adds the code to its page's bio and
+ *      ticks "I added the code" (the form does not explain how we check - it just asks).
+ *      Opening the link proves it reads that mailbox.
+ *   4. The proof the team sees:
+ *        - domain proof:  the mailbox is on the website's domain (info@lantern.co.il + lantern.co.il)
+ *                         and is not a free mailbox - the strongest proof, checked by the server;
+ *        - page proof:    the publisher puts the code in its page's About / bio, and the team opens
+ *                         the page and sees it (an old page, with its books, followers);
+ *        - ISBN signal:   books in our catalog whose ISBN starts with the prefix, and a link to the
+ *                         ISBN agencies' Global Register of Publishers - supports, never enough alone.
+ *      No document: a PDF is easy to forge and the team can't check it (big companies don't ask either).
+ *   5. The team adds the publisher, or says no. The author gets an email either way; an added
+ *      publisher gets an email too ("you're on the list - you can remove the code from your bio").
  *   The team can also fill in the details itself ("Fill it in myself"), or link the request to a
  *   publisher that is on the list already.
  *
  * Public (no login - the publisher has no BookBridge account), mounted at /api/publisher-apply:
- *   GET  /?token=...                         what the form is for -> { publisherName, contactEmail, penName, expiresAt, submitted }
- *   POST /  { token, name, website, registrationNumber, isbnPrefix, notes?, document: { data, name } }   once per link
+ *   GET  /?token=...   -> { publisherName, contactEmail, penName, expiresAt, submitted, proofCode }
+ *   POST /  { token, name, socialUrl, codeAdded: true, website?, registrationNumber?, isbnPrefix?, notes? }   once per link
  * Admin (project team only - mounted after the admin check in server/admin-routes.js):
  *   GET    /api/admin/publishers                         { publishers, requests }
  *   POST   /api/admin/publishers                         the team adds one itself (same fields + contactEmail, requestId?, confirm?)
- *   GET    /api/admin/publishers/:id/document            the document of a publisher on the list
+ *   GET    /api/admin/publishers/:id/document            the document of a publisher added before (old rows)
  *   DELETE /api/admin/publishers/:id                     take it off the list (kept, active = false)
  *   POST   /api/admin/publisher-requests/:id/invite      email the form to the publisher (again: after 24 hours)
- *   GET    /api/admin/publisher-requests/:id/document    the document the publisher sent
+ *   GET    /api/admin/publisher-requests/:id/document    a document sent before this change (old rows)
  *   POST   /api/admin/publisher-requests/:id/approve     { confirm? } add what the publisher sent
  *   POST   /api/admin/publisher-requests/:id/link        { publisherId } - on the list already
  *   POST   /api/admin/publisher-requests/:id/reject      { note }
  * 409 { error, warnings } = a cross-check failed; send again with confirm: true to add anyway.
- * The document can be up to 2 MB, so server.js lets the two form routes take bodies up to 3 MB.
  *
  * Security: the link token is 256 random bits, only its sha256 is stored, it works for one form.
  */
@@ -43,10 +53,19 @@ const DOC_MAGIC = { "application/pdf": [0x25, 0x50, 0x44, 0x46], "image/jpeg": [
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FREE_MAIL = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|icloud|me|mac|aol|protonmail|proton|gmx|mail|walla|012|netvision|bezeqint|zahav)\./;
 const SAME_EMAIL = "Another publisher on the list already uses this email.";
+const GRP_URL = "https://grp.isbn-international.org/"; // the ISBN agencies' Global Register of Publishers
 const INVITE_DAYS = 14;
 const REINVITE_HOURS = 24;
 const missing = (err) => err.code === "42P01" || err.code === "42703";
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
+
+/** A short code to put on an official page: "BB-7K2Q9M" (no 0/O, 1/I - easy to copy) */
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function newProofCode() {
+  let c = "";
+  for (let i = 0; i < 6; i++) c += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+  return `BB-${c}`;
+}
 
 /** The list in the authors' dropdown = the active rows here (key = id). Call at start and after changes. */
 async function loadPublishers(db) {
@@ -70,7 +89,19 @@ function domainOf(v) {
     return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? host : null;
   } catch { return null; }
 }
-const sameSite = (a, b) => a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+const sameSite = (a, b) => Boolean(a && b) && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`));
+
+/** A link to an official page ("facebook.com/LanternPress" -> "https://facebook.com/LanternPress"), or null */
+function pageUrlOf(v) {
+  let s = String(v || "").trim();
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  try {
+    const u = new URL(s);
+    if (!domainOf(u.hostname) || u.username || u.password) return null;
+    return u.toString().slice(0, 300);
+  } catch { return null; }
+}
 
 /** Israeli company (51…), association (58…) etc. numbers: 9 digits with a check digit, like an ID number */
 function israeliCheckDigitOk(num) {
@@ -84,10 +115,10 @@ function israeliCheckDigitOk(num) {
   return sum % 10 === 0;
 }
 
-/** A "data:...;base64,..." document -> { file, mime, docName }. Throws BadRequest. */
+/** Old rows only: a "data:...;base64,..." document -> { file, mime, docName }. Throws BadRequest. */
 function readDocument(doc, BadRequest) {
   const m = /^data:(application\/pdf|image\/jpeg|image\/png);base64,([A-Za-z0-9+/=]+)$/.exec(typeof doc?.data === "string" ? doc.data : "");
-  if (!m) throw new BadRequest("a document is required - a PDF, JPG or PNG (company registration, ISBN agency letter…)");
+  if (!m) throw new BadRequest("the document must be a PDF, JPG or PNG");
   const file = Buffer.from(m[2], "base64");
   if (!file.length || file.length > DOC_MAX) throw new BadRequest("the document can be up to 2 MB");
   if (!DOC_MAGIC[m[1]].every((b, i) => file[i] === b)) throw new BadRequest("the document is not really a PDF / JPG / PNG");
@@ -95,27 +126,39 @@ function readDocument(doc, BadRequest) {
   return { file, mime: m[1], docName };
 }
 
-/** Cross-checks: warnings, not errors - the team decides */
-function warningsFor({ contactEmail, website, registrationNumber, isbnPrefix }) {
-  const emailDomain = contactEmail.split("@")[1];
+/** What proves it is really this publisher: { domain: true | false, page: <url> | null } */
+function proofOf({ contactEmail, website, socialUrl }) {
+  const emailDomain = String(contactEmail || "").split("@")[1] || "";
+  return { domain: Boolean(website) && sameSite(emailDomain, website), page: socialUrl || null };
+}
+
+/** Cross-checks: warnings, not errors - the team decides. proofCode: the code the page should show. */
+function warningsFor({ contactEmail, website, socialUrl, registrationNumber, isbnPrefix }, { proofCode } = {}) {
+  const emailDomain = String(contactEmail || "").split("@")[1] || "";
   const warnings = [];
+  const proof = proofOf({ contactEmail, website, socialUrl });
   // the publisher's own domain first: "mail.lantern.co.il" starts like a free mailbox ("mail.") but is the publisher's server
-  if (sameSite(emailDomain, website)) { /* fine - the publisher's own domain */ }
-  else if (FREE_MAIL.test(emailDomain)) warnings.push(`The contact email is a private mailbox (${emailDomain}), not the publisher's own domain - anyone can open one.`);
-  else warnings.push(`The contact email (${emailDomain}) is not on the publisher's website domain (${website}).`);
-  if (/^\d{9}$/.test(registrationNumber)) {
-    if (!israeliCheckDigitOk(registrationNumber)) warnings.push("The registration number's check digit is wrong - it is not a valid Israeli company / association number.");
-    else if (!/^5[0-9]/.test(registrationNumber)) warnings.push("Israeli companies start with 51 and associations (amutot) with 58 - this number starts differently.");
-  } else {
-    warnings.push("The registration number is not 9 digits - fine for a publisher outside Israel, check it in that country's registry.");
+  if (!proof.domain) {
+    if (website && FREE_MAIL.test(emailDomain)) warnings.push(`The contact email is a private mailbox (${emailDomain}), not the publisher's own domain - anyone can open one.`);
+    else if (website) warnings.push(`The contact email (${emailDomain}) is not on the publisher's website domain (${website}).`);
+    if (socialUrl) warnings.push(`No email-domain proof: open ${socialUrl} and check that its About / bio shows the code${proofCode ? ` ${proofCode}` : ""} - and that the page is the real one (old, with its books and followers).`);
+    else warnings.push("No proof of control: the email is not on the publisher's domain and there is no official page with the code. Ask the publisher for one of them.");
   }
-  if (!isbnPrefix.startsWith("978965") && /\.il$/.test(website)) warnings.push("An Israeli website, but the ISBN prefix is not Israeli (978-965…).");
+  if (registrationNumber) {
+    if (/^\d{9}$/.test(registrationNumber)) {
+      if (!israeliCheckDigitOk(registrationNumber)) warnings.push("The registration number's check digit is wrong - it is not a valid Israeli company / association number.");
+      else if (!/^5[0-9]/.test(registrationNumber)) warnings.push("Israeli companies start with 51 and associations (amutot) with 58 - this number starts differently.");
+    } else {
+      warnings.push("The registration number is not 9 digits - fine for a publisher outside Israel, check it in that country's registry.");
+    }
+  }
+  if (isbnPrefix && !isbnPrefix.startsWith("978965") && /\.il$/.test(website || "")) warnings.push("An Israeli website, but the ISBN prefix is not Israeli (978-965…).");
   return warnings;
 }
 
 /** Reads and checks the form. Throws BadRequest for wrong input; returns { values, warnings }.
- *  contactEmail: given = fixed (the address the publisher's link was sent to). */
-function checkPublisher(body, BadRequest, { contactEmail: fixedEmail } = {}) {
+ *  contactEmail: given = fixed (the address the publisher's link was sent to). proofCode: for the warnings. */
+function checkPublisher(body, BadRequest, { contactEmail: fixedEmail, proofCode, requirePage = false } = {}) {
   const text = (v, max, name, required = true) => {
     const t = typeof v === "string" ? v.trim() : "";
     if (required && !t) throw new BadRequest(`${name} is required`);
@@ -125,25 +168,45 @@ function checkPublisher(body, BadRequest, { contactEmail: fixedEmail } = {}) {
   const name = text(body.name, 200, "publisher name");
   const contactEmail = fixedEmail || text(body.contactEmail, 254, "contact email").toLowerCase();
   if (!EMAIL_RE.test(contactEmail)) throw new BadRequest("contact email: please give a valid email address");
-  const website = domainOf(text(body.website, 300, "website"));
-  if (!website) throw new BadRequest("website: please give the publisher's site, like lanternpress.co.il");
-  const registrationNumber = text(body.registrationNumber, 30, "registration number").replace(/[\s-]/g, "");
-  if (!/^[0-9A-Za-z]{5,20}$/.test(registrationNumber)) throw new BadRequest("registration number: digits (and letters) only, 5-20 of them");
-  const isbnPrefix = text(body.isbnPrefix, 20, "ISBN prefix").replace(/[\s-]/g, "");
-  if (!/^97[89]\d{4,9}$/.test(isbnPrefix)) throw new BadRequest("ISBN prefix: starts with 978 or 979, 7-12 digits (e.g. 978-965-123)");
+  const websiteText = text(body.website, 300, "website", false);
+  const website = websiteText ? domainOf(websiteText) : null;
+  if (websiteText && !website) throw new BadRequest("website: please give the publisher's site, like lanternpress.co.il");
+  const socialText = text(body.socialUrl, 300, "official page", false);
+  const socialUrl = socialText ? pageUrlOf(socialText) : null;
+  if (socialText && !socialUrl) throw new BadRequest("official page: please give a full link, like facebook.com/LanternPress");
+  if (requirePage && !socialUrl) throw new BadRequest("please give your official page on a social network (Facebook / Instagram)");
+  if (!website && !socialUrl) throw new BadRequest("please give the publisher's website or its official page on a social network");
+  const regText = text(body.registrationNumber, 30, "registration number", false);
+  const registrationNumber = regText ? regText.replace(/[\s-]/g, "") : null;
+  if (registrationNumber && !/^[0-9A-Za-z]{5,20}$/.test(registrationNumber)) throw new BadRequest("registration number: digits (and letters) only, 5-20 of them");
+  const isbnText = text(body.isbnPrefix, 20, "ISBN prefix", false);
+  const isbnPrefix = isbnText ? isbnText.replace(/[\s-]/g, "") : null;
+  if (isbnPrefix && !/^97[89]\d{4,9}$/.test(isbnPrefix)) throw new BadRequest("ISBN prefix: starts with 978 or 979, 7-12 digits (e.g. 978-965-123)");
   const notes = text(body.notes, 1000, "notes", false);
-  const doc = readDocument(body.document, BadRequest);
-  const values = { name, contactEmail, website, registrationNumber, isbnPrefix, notes, ...doc };
-  return { values, warnings: warningsFor(values) };
+  const doc = body.document ? readDocument(body.document, BadRequest) : { file: null, mime: null, docName: null };
+  const values = { name, contactEmail, website, socialUrl, registrationNumber, isbnPrefix, notes, ...doc };
+  return { values, warnings: warningsFor(values, { proofCode }) };
+}
+
+/** How many books in our catalog have an ISBN with this prefix - a sign, never a proof alone */
+async function isbnBooks(db, prefix) {
+  if (!prefix) return null;
+  try {
+    const { rows } = await db.query(`SELECT count(*)::int AS n FROM books WHERE isbn_13 LIKE $1 || '%';`, [prefix]);
+    return rows[0].n;
+  } catch (err) {
+    if (missing(err)) return null;
+    throw err;
+  }
 }
 
 /** Adds a checked publisher to the list. Returns { id, name }. */
 async function insertPublisher(db, v, addedBy, BadRequest, source) {
   try {
     const { rows: [p] } = await db.query(
-      `INSERT INTO publishers (name, contact_email, website_domain, registration_number, isbn_prefix, document, document_mime, document_name, notes, added_by, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, name;`,
-      [v.name, v.contactEmail, v.website, v.registrationNumber, v.isbnPrefix, v.file, v.mime, v.docName, v.notes, addedBy, source]
+      `INSERT INTO publishers (name, contact_email, website_domain, social_url, registration_number, isbn_prefix, document, document_mime, document_name, notes, added_by, source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, name;`,
+      [v.name, v.contactEmail, v.website, v.socialUrl, v.registrationNumber, v.isbnPrefix, v.file, v.mime, v.docName, v.notes, addedBy, source]
     );
     await loadPublishers(db);
     return p;
@@ -212,7 +275,7 @@ function publicApplyRoutes(router, { db, h }) {
   const byToken = async (token, client = db, lock = false) => {
     if (typeof token !== "string" || token.length < 20 || token.length > 100) return null;
     const { rows } = await client.query(
-      `SELECT id, publisher_name, contact, pen_name, invite_expires_at, submitted_at, status FROM publisher_requests
+      `SELECT id, publisher_name, contact, pen_name, invite_expires_at, submitted_at, status, proof_code FROM publisher_requests
        WHERE invite_hash = $1 ${lock ? "FOR UPDATE" : ""};`, [sha256(token)]
     );
     return rows[0] || null;
@@ -226,6 +289,7 @@ function publicApplyRoutes(router, { db, h }) {
     res.json({
       publisherName: r.publisher_name, contactEmail: r.contact, penName: r.pen_name,
       expiresAt: r.invite_expires_at, submitted: Boolean(r.submitted_at),
+      proofCode: r.proof_code, // to put on the publisher's official page if its email is not on its own domain
     });
   }));
 
@@ -238,11 +302,12 @@ function publicApplyRoutes(router, { db, h }) {
       if (!r) { await client.query("ROLLBACK"); return res.status(404).json({ error: "This link is not valid." }); }
       if (r.submitted_at) { await client.query("ROLLBACK"); throw new BadRequest("we already have your details - thank you"); }
       if (gone(r)) { await client.query("ROLLBACK"); return res.status(410).json({ error: "This link has expired." }); }
-      const { values: v } = checkPublisher(req.body, BadRequest, { contactEmail: r.contact });
+      const { values: v } = checkPublisher({ ...req.body, document: undefined }, BadRequest, { contactEmail: r.contact, requirePage: true });
+      if (req.body.codeAdded !== true) throw new BadRequest("please add the code to your page's bio, and tick the box");
       await client.query(
-        `UPDATE publisher_requests SET submitted_at = now(), sub_name = $2, sub_website = $3, sub_registration = $4,
-           sub_isbn = $5, sub_notes = $6, sub_document = $7, sub_document_mime = $8, sub_document_name = $9 WHERE id = $1;`,
-        [r.id, v.name, v.website, v.registrationNumber, v.isbnPrefix, v.notes, v.file, v.mime, v.docName]
+        `UPDATE publisher_requests SET submitted_at = now(), sub_name = $2, sub_website = $3, sub_social = $4, sub_registration = $5,
+           sub_isbn = $6, sub_notes = $7 WHERE id = $1;`,
+        [r.id, v.name, v.website, v.socialUrl, v.registrationNumber, v.isbnPrefix, v.notes]
       );
       await client.query("COMMIT");
       r.sub_name = v.name;
@@ -284,32 +349,38 @@ function adminPublisherRoutes(router, { db, h }) {
 
   /** What the publisher sent, in the shape of the form */
   const submission = (r) => ({
-    name: r.sub_name, contactEmail: r.contact, website: r.sub_website, registrationNumber: r.sub_registration,
+    name: r.sub_name, contactEmail: r.contact, website: r.sub_website, socialUrl: r.sub_social, registrationNumber: r.sub_registration,
     isbnPrefix: r.sub_isbn, notes: r.sub_notes, file: r.sub_document, mime: r.sub_document_mime, docName: r.sub_document_name,
   });
 
   router.get("/publishers", wrap(async (req, res) => {
     const [pubs, reqs] = await Promise.all([
       db.query(
-        `SELECT id, name, contact_email, website_domain, registration_number, isbn_prefix, document_mime, document_name,
+        `SELECT id, name, contact_email, website_domain, social_url, registration_number, isbn_prefix, document_mime, document_name,
                 notes, active, created_at, removed_at, source,
                 (SELECT count(*)::int FROM author_requests ar WHERE lower(ar.publisher_email) = lower(p.contact_email)) AS authors
          FROM publishers p ORDER BY active DESC, name;`
       ).catch((err) => (missing(err) ? { rows: [], missing: true } : Promise.reject(err))),
       db.query(
         `SELECT r.id, r.status, r.publisher_name, r.contact, r.pen_name, r.books, r.message, r.note, r.created_at, r.decided_at,
-                r.invited_at, r.invite_expires_at, r.submitted_at, r.sub_name, r.sub_website, r.sub_registration, r.sub_isbn,
-                r.sub_notes, r.sub_document_name, p.name AS added_as, a.name, a.email
+                r.invited_at, r.invite_expires_at, r.submitted_at, r.sub_name, r.sub_website, r.sub_social, r.sub_registration, r.sub_isbn,
+                r.sub_notes, r.sub_document_name, r.proof_code, p.name AS added_as, a.name, a.email
          FROM publisher_requests r JOIN users u ON u.id = r.user_id JOIN neon_auth."user" a ON a.id = u.auth_user_id
          LEFT JOIN publishers p ON p.id = r.publisher_id
          WHERE r.status = 'pending' OR r.decided_at > now() - interval '60 days'
          ORDER BY (r.status = 'pending') DESC, r.created_at DESC LIMIT 200;`
       ).catch((err) => (missing(err) ? { rows: [], missing: true } : Promise.reject(err))),
     ]);
-    if (pubs.missing || reqs.missing) throw new BadRequest("publishers are not set up yet - run node db/create-publishers-tables.js");
+    if (pubs.missing || reqs.missing) throw new BadRequest("publishers are not set up yet - run node db/create-publishers-tables.js and node db/add-verification-proof.js");
+    // the ISBN signal: books in our catalog with the prefix the publisher gave
+    const isbnCount = new Map();
+    for (const prefix of new Set(reqs.rows.filter((r) => r.submitted_at && r.sub_isbn).map((r) => r.sub_isbn))) {
+      isbnCount.set(prefix, await isbnBooks(db, prefix));
+    }
     res.json({
+      grpUrl: GRP_URL,
       publishers: pubs.rows.map((p) => ({
-        id: p.id, key: String(p.id), name: p.name, contactEmail: p.contact_email, website: p.website_domain,
+        id: p.id, key: String(p.id), name: p.name, contactEmail: p.contact_email, website: p.website_domain, socialUrl: p.social_url,
         registrationNumber: p.registration_number, isbnPrefix: p.isbn_prefix, documentName: p.document_name,
         documentMime: p.document_mime, notes: p.notes, active: p.active, createdAt: p.created_at, removedAt: p.removed_at,
         authors: p.authors, source: p.source, // team | publisher | env (moved from .env - no document)
@@ -319,11 +390,17 @@ function adminPublisherRoutes(router, { db, h }) {
         penName: r.pen_name, books: r.books, message: r.message, note: r.note, createdAt: r.created_at, decidedAt: r.decided_at,
         invitedAt: r.invited_at, inviteExpiresAt: r.invite_expires_at, submittedAt: r.submitted_at,
         canReinvite: !r.submitted_at && (!r.invited_at || Date.now() - new Date(r.invited_at) > REINVITE_HOURS * 36e5),
-        submitted: r.submitted_at ? {
-          name: r.sub_name, website: r.sub_website, registrationNumber: r.sub_registration, isbnPrefix: r.sub_isbn,
-          notes: r.sub_notes, documentName: r.sub_document_name,
-          warnings: warningsFor({ contactEmail: r.contact, website: r.sub_website, registrationNumber: r.sub_registration, isbnPrefix: r.sub_isbn }),
-        } : null,
+        proofCode: r.proof_code,
+        submitted: r.submitted_at ? (() => {
+          const v = { contactEmail: r.contact, website: r.sub_website, socialUrl: r.sub_social, registrationNumber: r.sub_registration, isbnPrefix: r.sub_isbn };
+          return {
+            name: r.sub_name, website: r.sub_website, socialUrl: r.sub_social, registrationNumber: r.sub_registration, isbnPrefix: r.sub_isbn,
+            notes: r.sub_notes, documentName: r.sub_document_name,
+            proof: proofOf(v), // { domain: true/false, page: url | null }
+            isbnBooks: r.sub_isbn ? isbnCount.get(r.sub_isbn) ?? null : null,
+            warnings: warningsFor(v, { proofCode: r.proof_code }),
+          };
+        })() : null,
         addedAs: r.added_as, name: r.name, email: r.email,
       })),
     });
@@ -363,12 +440,14 @@ function adminPublisherRoutes(router, { db, h }) {
     if (r.invited_at && Date.now() - new Date(r.invited_at) < REINVITE_HOURS * 36e5) throw new BadRequest("the form was sent in the last 24 hours");
     const token = crypto.randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + INVITE_DAYS * 864e5);
+    const proofCode = r.proof_code || newProofCode();
     const emailed = await mailer.sendPublisherInvite({
       to: r.contact, token, publisherName: r.publisher_name, penName: r.pen_name, books: r.books, expiresAt,
     });
     if (!emailed) throw new BadRequest("the email was not sent (mail is off or today's limit was reached) - try later");
-    await db.query(`UPDATE publisher_requests SET invite_hash = $2, invite_expires_at = $3, invited_at = now() WHERE id = $1;`,
-      [r.id, sha256(token), expiresAt]);
+    await db.query(`UPDATE publisher_requests SET invite_hash = $2, invite_expires_at = $3, invited_at = now(),
+                      proof_code = COALESCE(proof_code, $4) WHERE id = $1;`,
+      [r.id, sha256(token), expiresAt, proofCode]);
     res.json({ ok: true, emailed });
   }));
 
@@ -385,12 +464,14 @@ function adminPublisherRoutes(router, { db, h }) {
     if (r.status !== "pending") throw new BadRequest("this request was decided already");
     if (!r.submitted_at) throw new BadRequest("the publisher has not sent its details yet");
     const v = submission(r);
-    const warnings = warningsFor(v);
+    const warnings = warningsFor(v, { proofCode: r.proof_code });
     if (mailer.isPublisherEmail(v.contactEmail)) warnings.push(SAME_EMAIL);
     if (warnings.length && req.body?.confirm !== true) return res.status(409).json({ error: "please check these before adding", warnings });
     const p = await insertPublisher(db, v, req.user.id, BadRequest, "publisher");
     const emailed = await decide(r.id, { status: "added", publisherId: p.id, publisherName: p.name });
-    res.json({ ok: true, publisher: { id: p.id, key: String(p.id), name: p.name }, emailed });
+    // the publisher is on the list now: tell it, and that the code can come off its page
+    const publisherEmailed = await mailer.sendPublisherAdded({ to: r.contact, publisherName: p.name, proofCode: r.proof_code }).catch(() => false);
+    res.json({ ok: true, publisher: { id: p.id, key: String(p.id), name: p.name }, emailed, publisherEmailed });
   }));
 
   router.post("/publisher-requests/:id/link", wrap(async (req, res) => {
@@ -421,5 +502,5 @@ function sendDocument(res, file, mime, name) {
 
 module.exports = {
   loadPublishers, requestPublisher, latestRequest, pendingCount, adminPublisherRoutes, publicApplyRoutes,
-  checkPublisher, warningsFor, israeliCheckDigitOk, domainOf,
+  checkPublisher, warningsFor, proofOf, israeliCheckDigitOk, domainOf, pageUrlOf, newProofCode, isbnBooks,
 };

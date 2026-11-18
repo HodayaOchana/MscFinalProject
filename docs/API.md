@@ -306,15 +306,15 @@ The link in the email the team sends (`/publisher/apply?token=...`, 14 days, one
 
 | Route | Body | Notes |
 |---|---|---|
-| `GET /api/publisher-apply?token=...` | - | `{ publisherName, contactEmail, penName, expiresAt, submitted }`; 404 bad link, 410 expired |
-| `POST /api/publisher-apply` | `{ token, name, website, registrationNumber, isbnPrefix, notes?, document: { data, name } }` | once per link; the email is the one the link was sent to (receiving it proves it). Up to 3 MB. The team gets an email |
+| `GET /api/publisher-apply?token=...` | - | `{ publisherName, contactEmail, penName, expiresAt, submitted, proofCode }`; 404 bad link, 410 expired |
+| `POST /api/publisher-apply` | `{ token, name, socialUrl, codeAdded: true, website?, registrationNumber?, isbnPrefix?, notes? }` | once per link; the official page is required, and the publisher confirms it added `proofCode` to the page's bio. The email is the one the link was sent to. No document. The team gets an email; once the team adds it, the publisher gets an email that it can remove the code |
 
 ### Verified authors - `/api/author`  🔒
 
 | Route | Body | Notes |
 |---|---|---|
 | `GET /api/author/search?q=...` | - | catalog search for "This is my book" → `{ books: [Book + { matchesYou }] }` |
-| `POST /api/author/claims` | `{ bookId, message? }` | linked at once if the book's author is one of your verified names; otherwise a claim for the team |
+| `POST /api/author/claims` | `{ bookId }` | links a book whose author is one of your verified names; any other book → 400 (no claims for the team any more). `GET /api/author/search` returns only books with your verified name |
 | `POST /api/author/books` | `{ title, authors, description, genres, publishedDate, ... }` | a new book - live at once, with its embedding and similar books; must list your verified name as an author |
 | `PUT /api/author/books/:id/cover` | `{ image: "data:image/jpeg;base64,..." }` or `{ url: "https://..." }` | the cover of a book **you uploaded** (403 otherwise): JPEG / PNG / WebP up to 70 KB, or an https link (`server/book-covers.js`) |
 | `DELETE /api/author/books/:id/cover` | - | back to the designed cover |
@@ -331,16 +331,16 @@ Only signed-in users whose email is on `ADMIN_EMAILS` (`server/admin-routes.js`)
 | `GET /api/admin/me` | - | `{ admin: true }` |
 | `GET /api/admin/author-requests?status=pending\|all` | - | author requests and the publisher's answer |
 | `POST /api/admin/author-requests/:id/reject` | `{ note }` | stops the publisher link |
-| `GET /api/admin/book-claims?status=pending\|all` | - | "this is my book" claims for the team |
+| `GET /api/admin/book-claims?status=pending\|all` | - | "this is my book" claims made before claims were closed (old rows only) |
 | `POST /api/admin/book-claims/:id/approve` \| `/reject` | `{ note }` | approve = link the book to the author |
 | `GET /api/admin/uploads` | - | books uploaded by authors, newest first |
 | `DELETE /api/admin/uploads/:bookId` | - | remove an **uploaded** book (never a catalog book); 409 if other data still refers to it |
 | `GET /api/admin/publishers` | - | `{ publishers, requests }` - every publisher on the list (`source`: team / publisher / env) and authors' "isn't listed" requests (`server/publishers.js`) |
-| `POST /api/admin/publishers` | `{ name, contactEmail, website, registrationNumber, isbnPrefix, document: { data: "data:application/pdf;base64,...", name }, notes?, requestId?, confirm? }` | add a publisher. The document (PDF / JPG / PNG, up to 2 MB - this route alone takes bodies up to 3 MB) is required. Cross-checks: the email's domain vs. the website, a free mailbox, the Israeli registration check digit, an Israeli site with a non-Israeli ISBN prefix → 409 `{ error, warnings }` unless `confirm: true`. With `requestId`: the request is marked added and the author is emailed |
-| `GET /api/admin/publishers/:id/document` | - | the document file |
+| `POST /api/admin/publishers` | `{ name, contactEmail, website?, socialUrl?, registrationNumber?, isbnPrefix?, notes?, requestId?, confirm? }` | add a publisher (a website or an official page is required; no document). Cross-checks: no email-domain proof (→ check the code on the official page), a free mailbox, the Israeli registration check digit, an Israeli site with a non-Israeli ISBN prefix → 409 `{ error, warnings }` unless `confirm: true`. With `requestId`: the request is marked added and the author is emailed. `GET /api/admin/publishers` also returns `grpUrl` and, per submitted request, `proof { domain, page }`, `isbnBooks` (catalog books with the prefix) and `proofCode` |
+| `GET /api/admin/publishers/:id/document` | - | the document file (publishers added before documents were dropped) |
 | `DELETE /api/admin/publishers/:id` | - | take it off the list (the row stays, `active = false`) |
 | `POST /api/admin/publisher-requests/:id/invite` | - | email the form to the publisher (the only way an unlisted address gets mail - an admin presses it); again only after 24 hours |
-| `GET /api/admin/publisher-requests/:id/document` | - | the document the publisher sent |
+| `GET /api/admin/publisher-requests/:id/document` | - | a document sent before documents were dropped |
 | `POST /api/admin/publisher-requests/:id/approve` | `{ confirm? }` | add what the publisher sent to the list + email the author; 409 `{ warnings }` without `confirm: true` |
 | `POST /api/admin/publisher-requests/:id/link` | `{ publisherId }` | the publisher is on the list already: mark added, email the author |
 | `POST /api/admin/publisher-requests/:id/reject` | `{ note }` | not added: the author gets the note by email |

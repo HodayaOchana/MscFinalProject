@@ -109,7 +109,7 @@ function RequestForm({ onSent, onCancel, again, penName, ready, publishers = [],
           <label className="flex flex-col gap-1.5 text-sm font-medium">Publisher’s email
             <input name="publisherContact" type="email" required maxLength={254} placeholder="rights@lanternpress.com" className="field font-normal" />
           </label>
-          <p className="m-0 text-sm text-muted sm:col-span-2">The BookBridge team will send your publisher a short form (company number, ISBN prefix, a document). Once they fill it in and we check it, we add them to the list and email you – then you can ask them to confirm you.</p>
+          <p className="m-0 text-sm text-muted sm:col-span-2">The BookBridge team will send your publisher a short form (their website or official page, and their ISBN prefix if they have one – no documents). Once we check it’s really them, we add them to the list and email you – then you can ask them to confirm you.</p>
         </div>
       )}
       <label className="flex flex-col gap-1.5 text-sm font-medium"><span>Anything else? <span className="font-normal text-muted">(optional)</span></span>

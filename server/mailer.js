@@ -107,7 +107,7 @@ function sendUnlistedPublisher({ id, accountName, accountEmail, penName, books, 
       <p style="margin:12px 0 4px"><b>Books:</b></p><pre style="margin:0;font-family:inherit;white-space:pre-wrap">${esc(books)}</pre>
       ${message ? `<p style="margin:12px 0 4px"><b>Message:</b> ${esc(message)}</p>` : ""}
       <p style="margin:24px 0"><a href="${esc(link)}" style="background:#A24B25;color:#FFFBF4;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open the request</a></p>
-      <p style="font-size:13px;color:#6B5B4E">From there, send the form to the publisher: it fills in its company / association number, ISBN prefix, website and a document, and you check them. The author gets an email with your answer.</p>
+      <p style="font-size:13px;color:#6B5B4E">From there, send the form to the publisher: it gives its website or official page (and ISBN prefix if it has one), and you check the proof. The author gets an email with your answer.</p>
     </div>`;
   return sendToAdmins(`BookBridge: author's publisher not on the list - ${publisherName}`, text, html);
 }
@@ -122,19 +122,34 @@ function sendPublisherInvite({ to, token, publisherName, penName, books, expires
   const text =
     `Hello${publisherName ? ` ${publisherName}` : ""},\n\n` +
     `An author on BookBridge, "${penName}", says they publish with you. Before authors can be confirmed by you, ` +
-    `we add publishers to our list - please fill in your details (company number, ISBN prefix, website and a document):\n${link}\n\n` +
+    `we add publishers to our list - please fill in your details (your official page, website, and ISBN prefix if you have one) and add a short code we give you to your page's bio:\n${link}\n\n` +
     `The link works until ${until}. Books the author listed:\n${books}\n\nIf you don't know this author, just ignore this email.\n`;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px;color:#2B211C">
       <h2 style="margin:0 0 12px">Join BookBridge’s list of publishers</h2>
       <p style="margin:4px 0">An author on BookBridge, <b>${esc(penName)}</b>, says they publish with ${publisherName ? `<b>${esc(publisherName)}</b>` : "you"}.</p>
-      <p style="margin:4px 0">Before you can confirm your authors, we add publishers to our list. It takes two minutes: your company / association number, ISBN prefix, website and one document.</p>
+      <p style="margin:4px 0">Before you can confirm your authors, we add publishers to our list. It takes two minutes: your official page, your website and your ISBN prefix if you have one – and a short code we give you, added to your page’s bio. No documents.</p>
       <p style="margin:12px 0 4px"><b>Books the author listed:</b></p>
       <pre style="white-space:pre-wrap;font-family:inherit;background:#F7F1E8;padding:10px;border-radius:8px;margin:0">${esc(books)}</pre>
       <p style="margin:24px 0"><a href="${esc(link)}" style="background:#A24B25;color:#FFFBF4;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Fill in your details</a></p>
       <p style="font-size:12px;color:#6B5B4E">The link works until ${esc(until)}. If you don't know this author, simply ignore this email.</p>
     </div>`;
   return sendMail(to, `BookBridge: ${penName} says they publish with you`, text, html);
+}
+
+/** To a publisher the team just ADDED to the list (its address is on the list now): welcome, and the code can come off its page */
+function sendPublisherAdded({ to, publisherName, proofCode }) {
+  const text =
+    `Hello${publisherName ? ` ${publisherName}` : ""},\n\n` +
+    `You're now on BookBridge's list of publishers - thank you! Your authors can ask you to confirm them; each request comes to this address.\n\n` +
+    (proofCode ? `You can now remove the code ${proofCode} from your page's bio.\n` : "");
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:560px;color:#2B211C">
+      <h2 style="margin:0 0 12px">You’re on BookBridge’s list of publishers</h2>
+      <p style="margin:4px 0">Thank you${publisherName ? `, <b>${esc(publisherName)}</b>` : ""}! Your authors can now ask you to confirm them – each request comes to this address.</p>
+      ${proofCode ? `<p style="margin:12px 0 4px">You can now <b>remove the code ${esc(proofCode)}</b> from your page’s bio.</p>` : ""}
+    </div>`;
+  return sendMail(to, "BookBridge: you're on the list of publishers", text, html);
 }
 
 /** To the team: a publisher filled in its details - check them */
@@ -144,7 +159,7 @@ function sendPublisherSubmitted({ id, publisherName, penName }) {
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px;color:#2B211C">
       <h2 style="margin:0 0 12px">${esc(publisherName)} sent its details</h2>
-      <p style="margin:4px 0">For the author <b>${esc(penName)}</b>. Check the registration number, ISBN prefix, website and document.</p>
+      <p style="margin:4px 0">For the author <b>${esc(penName)}</b>. Check the proof: is the email on the publisher's own domain, or is the code on its official page? Then the ISBN prefix.</p>
       <p style="margin:24px 0"><a href="${esc(link)}" style="background:#A24B25;color:#FFFBF4;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Check the details</a></p>
     </div>`;
   return sendToAdmins(`BookBridge: ${publisherName} sent its details`, text, html);
@@ -204,5 +219,5 @@ module.exports = {
   sendToAdmins, isAdminEmail, ADMINS,
   sendPublisherConfirmation, isPublisherEmail, publisherVerificationReady, mailReady,
   publisherChoices, publisherByKey, sendUnlistedPublisher, setDbPublishers, sendPublisherDecision,
-  sendPublisherInvite, sendPublisherSubmitted,
+  sendPublisherInvite, sendPublisherSubmitted, sendPublisherAdded,
 };
